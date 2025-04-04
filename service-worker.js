@@ -6,9 +6,13 @@ const CACHE_ASSETS = [
   './',
   './index.html',
   './css/style.css',
+  './css/multi-qr.css',  // 追加: 複数QRコード読み取り用CSS
   './js/app.js',
   './js/qr-scanner.js',
   './js/jsQR.js',
+    // 追加: ZXingライブラリ (CDN版)
+  'https://unpkg.com/@zxing/library@latest',
+  './js/multi-qr-scanner.js',  // 追加: 複数QRコード読み取り用JS
   './manifest.json',
   './images/icons/favicon.png',
   './images/icons/icon-72x72.png',
@@ -60,6 +64,10 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   console.log('Service Worker: Fetch', event.request.url);
   
+  // 外部CDNリソース(ZXingライブラリ)への対応を追加
+  const isExternal = event.request.url.startsWith('https://unpkg.com/');
+  
+
   // キャッシュファーストの戦略
   event.respondWith(
     caches.match(event.request)

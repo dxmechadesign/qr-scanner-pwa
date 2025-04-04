@@ -62,6 +62,39 @@
                     <button id="batch-cancel" class="secondary-button">キャンセル</button>
                 </div>
             </div>
+
+            <!-- マルチQRコード読み取りUI -->
+            <div id="multi-qr-container" class="multi-qr-container">
+                <div id="capture-ui" class="capture-ui">
+                <div class="camera-container">
+                    <video id="qr-video" playsinline></video>
+                    <div class="capture-overlay">
+                    <div class="capture-frame"></div>
+                    <div class="capture-instruction">複数のQRコードを枠内に収めてください</div>
+                    </div>
+                </div>
+                <div class="capture-controls">
+                    <button id="capture-button" class="primary-button large-button">撮影</button>
+                </div>
+                </div>
+            
+                <div id="results-ui" class="results-ui">
+                <div class="results-header">
+                    <h3>検出結果</h3>
+                    <span id="detection-status" class="detection-status">検出中...</span>
+                </div>
+                <div class="image-preview-container">
+                    <img id="captured-image" class="captured-image" alt="撮影画像" />
+                </div>
+                <div id="detected-codes-list" class="detected-codes-list">
+                    <!-- ここにQRコード結果が表示されます -->
+                </div>
+                <div class="results-actions">
+                    <button id="rescan-button" class="secondary-button">再撮影</button>
+                    <button id="save-results-button" class="primary-button">全て保存</button>
+                </div>
+                </div>
+            </div>
         </div>
         
         <div class="recent-scans">
@@ -84,6 +117,10 @@
         <button id="nav-settings" class="nav-button">
             <span class="icon">⚙️</span>
             <span>設定</span>
+        </button>
+        <button id="nav-multi-scan" class="nav-button">
+        <span class="icon">📷+</span>
+        <span>複数スキャン</span>
         </button>
     </nav>
 

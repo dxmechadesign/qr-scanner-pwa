@@ -1,0 +1,222 @@
+/* 複数QRコード読み取り用のスタイル */
+
+/* コンテナ */
+.multi-qr-container {
+    margin-bottom: 2rem;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    overflow: hidden;
+  }
+  
+  /* キャプチャUI */
+  .capture-ui {
+    display: none;
+  }
+  
+  .capture-ui.active {
+    display: block;
+  }
+  
+  .camera-container {
+    position: relative;
+    width: 100%;
+    height: 0;
+    padding-bottom: 75%; /* 4:3のアスペクト比 */
+    background-color: #000;
+    overflow: hidden;
+  }
+  
+  .capture-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+  }
+  
+  .capture-frame {
+    width: 80%;
+    height: 80%;
+    border: 2px dashed rgba(255, 255, 255, 0.8);
+    border-radius: 8px;
+  }
+  
+  .capture-instruction {
+    position: absolute;
+    bottom: 10%;
+    color: white;
+    background-color: rgba(0, 0, 0, 0.6);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    text-align: center;
+    max-width: 90%;
+  }
+  
+  .capture-controls {
+    padding: 1rem;
+    display: flex;
+    justify-content: center;
+  }
+  
+  .large-button {
+    padding: 0.75rem 2rem;
+    font-size: 1.1rem;
+    border-radius: 50px;
+    width: 80%;
+    max-width: 300px;
+  }
+  
+  /* 結果UI */
+  .results-ui {
+    display: none;
+    padding: 1rem;
+  }
+  
+  .results-ui.active {
+    display: block;
+  }
+  
+  .results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  
+  .detection-status {
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    background-color: var(--secondary-color);
+    color: white;
+  }
+  
+  .detection-status.processing {
+    background-color: var(--warning-color);
+    color: black;
+    animation: pulse 1.5s infinite;
+  }
+  
+  .detection-status.success {
+    background-color: var(--success-color);
+  }
+  
+  .detection-status.error {
+    background-color: var(--danger-color);
+  }
+  
+  @keyframes pulse {
+    0% { opacity: 0.7; }
+    50% { opacity: 1; }
+    100% { opacity: 0.7; }
+  }
+  
+  .image-preview-container {
+    width: 100%;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #f1f3f5;
+    position: relative;
+    height: 0;
+    padding-bottom: 75%; /* 4:3のアスペクト比 */
+  }
+  
+  .captured-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  
+  .detected-codes-list {
+    margin-bottom: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+  }
+  
+  .qr-result-item {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .qr-result-item:last-child {
+    border-bottom: none;
+  }
+  
+  .qr-result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  
+  .qr-result-number {
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    background-color: rgba(0, 123, 255, 0.1);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+  }
+  
+  .qr-result-remove {
+    background: none;
+    color: var(--danger-color);
+    border: none;
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+  }
+  
+  .qr-result-data {
+    font-family: monospace;
+    word-break: break-all;
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+  
+  .qr-result-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--secondary-color);
+  }
+  
+  .results-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+  }
+  
+  .empty-message {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--secondary-color);
+  }
+  
+  /* レスポンシブデザイン */
+  @media (min-width: 768px) {
+    .capture-frame {
+      max-width: 500px;
+      max-height: 500px;
+    }
+    
+    .results-actions button {
+      min-width: 150px;
+    }
+  }
