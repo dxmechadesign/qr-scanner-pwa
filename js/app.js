@@ -22,6 +22,7 @@ const App = {
             batchComplete: document.getElementById('batch-complete'),
             batchCancel: document.getElementById('batch-cancel'),
             scanStatus: document.getElementById('scan-status'),
+            duplicateNotification: document.getElementById('duplicate-notification'),
             navButtons: {
                 scan: document.getElementById('nav-scan'),
                 history: document.getElementById('nav-history'),
@@ -184,6 +185,35 @@ const App = {
         this.elements.resultContainer.classList.remove('hidden');
     },
 
+    // 重複通知の表示
+    showDuplicateNotification(data) {
+        // 通知領域が存在する場合
+        if (this.elements.duplicateNotification) {
+            // データを表示
+            this.elements.duplicateNotification.innerHTML = `
+                <div class="duplicate-content">
+                    <span class="duplicate-icon">⚠️</span>
+                    <span class="duplicate-text">重複: ${data}</span>
+                </div>
+            `;
+            
+            // 表示
+            this.elements.duplicateNotification.classList.remove('hidden');
+            this.elements.duplicateNotification.classList.add('show');
+            
+            // 3秒後に非表示
+            setTimeout(() => {
+                this.elements.duplicateNotification.classList.remove('show');
+                setTimeout(() => {
+                    this.elements.duplicateNotification.classList.add('hidden');
+                }, 300);
+            }, 3000);
+        } else {
+            // DOM要素がない場合はトーストで表示
+            this.showToast(`重複: ${data}`);
+        }
+    },
+
     // 一括スキャンUI更新メソッド
     updateBatchUI(batchResults) {
         const batchItems = this.elements.batchItems;
@@ -198,16 +228,8 @@ const App = {
             const batchItem = document.createElement('div');
             batchItem.className = 'batch-item';
             
-            // 重複アイテムにはクラスを追加
-            if (item.isDuplicate) {
-                batchItem.classList.add('duplicate');
-            }
-            
             batchItem.innerHTML = `
                 <div class="batch-item-data">${item.data}</div>
-                <div class="batch-item-status">
-                    ${item.isDuplicate ? '<span class="duplicate-label">重複</span>' : ''}
-                </div>
                 <button class="batch-item-remove" data-id="${item.id}">✕</button>
             `;
             batchItems.appendChild(batchItem);

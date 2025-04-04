@@ -8,6 +8,7 @@ const QRScanner = {
     videoStream: null,
     scanInterval: null,
     isProcessing: false, // スキャン処理中かどうかのフラグ
+    lastScannedCode: null, // 最後にスキャンされたコード
     
     // 一括スキャン用
     isBatchMode: false,
@@ -178,29 +179,29 @@ const QRScanner = {
                 this.playBeepSound();
                 
                 if (this.isBatchMode) {
-                    // 一括モードの場合は結果を追加（重複も許可）
-                    const timestamp = new Date().toISOString();
-                    const newId = Date.now().toString();
-                    
-                    // 重複フラグを確認（表示目的）
+                    // 一括モードの場合は結果を確認
                     const isDuplicate = this.batchResults.some(item => item.data === code.data);
                     
-                    // 新しいスキャン結果を追加
-                    this.batchResults.push({
-                        id: newId,
-                        data: code.data,
-                        timestamp: timestamp,
-                        isDuplicate: isDuplicate
-                    });
-                    
-                    console.log("一括スキャン結果追加:", this.batchResults.length + "件目", isDuplicate ? "(重複)" : "");
-                    
-                    // UI更新
-                    App.updateBatchUI(this.batchResults);
+                    if (isDuplicate) {
+                        // 重複の場合はUIに表示だけ
+                        this.lastScannedCode = code.data;
+                        App.showDuplicateNotification(code.data);
+                    } else {
+                        // 新規の場合はリストに追加
+                        const timestamp = new Date().toISOString();
+                        this.batchResults.push({
+                            id: Date.now().toString(),
+                            data: code.data,
+                            timestamp: timestamp
+                        });
+                        
+                        // UI更新
+                        App.updateBatchUI(this.batchResults);
+                    }
                     
                     // 処理中フラグを設定して一時的にスキャンを停止
                     this.isProcessing = true;
-                    this.updateScanStatus('読み取り成功... 準備中');
+                    this.updateScanStatus(`読み取り${isDuplicate ? '(重複)' : '成功'}... 準備中`);
                     
                     // 短時間後に再スキャン可能にする
                     setTimeout(() => {
@@ -229,8 +230,10 @@ const QRScanner = {
             this.scanStatusElement.className = 'scan-status';
             if (statusText.includes('スキャン中')) {
                 this.scanStatusElement.classList.add('scanning');
-            } else if (statusText.includes('読み取り成功')) {
+            } else if (statusText.includes('成功')) {
                 this.scanStatusElement.classList.add('success');
+            } else if (statusText.includes('重複')) {
+                this.scanStatusElement.classList.add('duplicate');
             } else if (statusText.includes('準備中')) {
                 this.scanStatusElement.classList.add('processing');
             } else if (statusText.includes('停止')) {
