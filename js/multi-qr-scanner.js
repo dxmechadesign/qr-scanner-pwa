@@ -17,6 +17,17 @@ const MultiQRScanner = {
         this.resultsList = document.getElementById('detected-codes-list');
         this.statusElement = document.getElementById('detection-status');
         
+        console.log('要素の参照:', {
+            video: this.videoElement,
+            button: this.captureButton
+        });
+        
+        // captureButtonが見つからない場合
+        if (!this.captureButton) {
+            console.error('撮影ボタンが見つかりません！');
+            return Promise.reject(new Error('撮影ボタンが見つかりません'));
+        }
+
         // ZXingライブラリの動的インポート
         try {
             console.log('ZXingライブラリを読み込み中...');
@@ -35,6 +46,8 @@ const MultiQRScanner = {
             
             // イベントリスナーの設定
             this.setupEventListeners();
+
+            return Promise.resolve(); // 初期化成功を示す
             
         } catch (error) {
             console.error('ZXingライブラリの読み込みに失敗:', error);
@@ -44,26 +57,36 @@ const MultiQRScanner = {
     
     // イベントリスナーのセットアップ
     setupEventListeners() {
-        // 撮影ボタン
-        this.captureButton.addEventListener('click', () => {
-            if (this.processing) return;
-            
-            if (document.getElementById('capture-ui').classList.contains('active')) {
-                this.captureImage();
-            } else {
-                this.showCaptureUI();
-            }
-        });
+        console.log('MultiQRScanner: イベントリスナーをセットアップ中...')
+        
+        // 撮影ボタン - すでに設定済みのリスナーを削除
+        this.captureButton.removeEventListener('click', this._captureHandler);
+        
+        // ハンドラー関数を定義
+        this._captureHandler = () => {
+            console.log('撮影ボタンがクリックされました');
+            this.captureImage();
+        };
+        
+        // リスナーを追加
+        this.captureButton.addEventListener('click', this._captureHandler);
+        console.log('撮影ボタンのリスナーを設定しました');
         
         // 再撮影ボタン
-        document.getElementById('rescan-button').addEventListener('click', () => {
-            this.showCaptureUI();
-        });
+        const rescanButton = document.getElementById('rescan-button');
+        if (rescanButton) {
+            rescanButton.removeEventListener('click', this._rescanHandler);
+            this._rescanHandler = () => this.showCaptureUI();
+            rescanButton.addEventListener('click', this._rescanHandler);
+        }
         
         // 保存ボタン
-        document.getElementById('save-results-button').addEventListener('click', () => {
-            this.saveDetectedCodes();
-        });
+        const saveButton = document.getElementById('save-results-button');
+        if (saveButton) {
+            saveButton.removeEventListener('click', this._saveHandler);
+            this._saveHandler = () => this.saveDetectedCodes();
+            saveButton.addEventListener('click', this._saveHandler);
+        }
     },
     
     // カメラUIを表示
@@ -94,14 +117,31 @@ const MultiQRScanner = {
             const constraints = { 
                 video: { 
                     facingMode: 'environment',
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
+                    // 解像度をより適切な値に調整
+                    width: { ideal: 1280 }, // 元は1920
+                    height: { ideal: 720 }  // 元は1080
+                    // ズーム制限を追加
+                    // advanced: [{ zoom: 1.0 }] // 一部のブラウザでサポート
                 } 
             };
             
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             this.videoElement.srcObject = stream;
             
+            // ズーム設定のリセットを試みる（サポートされている場合）
+            const videoTrack = stream.getVideoTracks()[0];
+            if (videoTrack && typeof videoTrack.getCapabilities === 'function') {
+                const capabilities = videoTrack.getCapabilities();
+                if (capabilities.zoom) {
+                    const settings = { zoom: 1.0 }; // 最小ズーム
+                    try {
+                        await videoTrack.applyConstraints({ advanced: [settings] });
+                    } catch (e) {
+                        console.log('ズーム設定の適用に失敗:', e);
+                    }
+                }
+            }
+
             return new Promise((resolve) => {
                 this.videoElement.onloadedmetadata = () => {
                     this.videoElement.play()
