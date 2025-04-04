@@ -9,6 +9,16 @@ const MultiQRScanner = {
     // 初期化
     async init() {
         console.log('MultiQRScanner: 初期化中...');
+
+        // ZXingライブラリが正しく読み込まれているか確認
+        if (typeof window.ZXing === 'undefined') {
+            console.error('ZXingライブラリが見つかりません');
+            this.showToast('ZXingライブラリが見つかりません。ページを再読み込みしてください。');
+            return Promise.reject(new Error('ZXingライブラリがロードされていません'));
+        }
+
+        console.log('ZXing確認:', window.ZXing);
+        
         // 要素の参照
         this.videoElement = document.getElementById('multi-qr-video');
         this.canvasElement = document.createElement('canvas');
