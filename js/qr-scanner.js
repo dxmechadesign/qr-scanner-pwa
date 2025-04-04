@@ -12,7 +12,7 @@ const QRScanner = {
     
     // スキャン領域とスケーリング設定
     scanAreaWidth: 0.6,    // キャンバスの幅に対する比率（60%）
-    scanAreaHeight: 0.6,   // キャンバスの高さに対する比率（60%）
+    scanAreaHeight: 0.3,   // キャンバスの高さに対する比率（60%）
     scaleFactor: 0.5,      // スケーリング係数（50%）
     
     // 一括スキャン用
