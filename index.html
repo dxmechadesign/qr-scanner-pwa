@@ -32,22 +32,9 @@
                 <button id="stop-button" class="secondary-button" disabled>停止</button>
                 <button id="batch-scan-button" class="secondary-button">一括スキャン</button>
                 <select id="camera-select" class="camera-select">
-                  <option value="">カメラを選択</option>
+                    <option value="">カメラを選択</option>
                 </select>
-              </div>
-              
-              <!-- 追加：一括スキャン用のUI -->
-              <div id="batch-scan-container" class="batch-scan-container hidden">
-                <div class="batch-header">
-                  <h3>一括スキャン</h3>
-                  <span id="batch-count" class="batch-count">0件</span>
-                </div>
-                <div id="batch-items" class="batch-items"></div>
-                <div class="batch-actions">
-                  <button id="batch-complete" class="primary-button">完了</button>
-                  <button id="batch-cancel" class="secondary-button">キャンセル</button>
-                </div>
-              </div>
+            </div>
             
             <div id="scan-result" class="result-container hidden">
                 <h3>スキャン結果</h3>
@@ -56,6 +43,19 @@
                     <button id="copy-button" class="action-button">コピー</button>
                     <button id="save-button" class="action-button primary">保存</button>
                     <button id="scan-again-button" class="action-button">再スキャン</button>
+                </div>
+            </div>
+            
+            <!-- 追加: 一括スキャン用UI -->
+            <div id="batch-scan-container" class="batch-scan-container hidden">
+                <div class="batch-header">
+                    <h3>一括スキャン</h3>
+                    <span id="batch-count" class="batch-count">0件</span>
+                </div>
+                <div id="batch-items" class="batch-items"></div>
+                <div class="batch-actions">
+                    <button id="batch-complete" class="primary-button">完了</button>
+                    <button id="batch-cancel" class="secondary-button">キャンセル</button>
                 </div>
             </div>
         </div>

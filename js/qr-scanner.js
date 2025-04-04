@@ -7,6 +7,8 @@ const QRScanner = {
     canvasContext: null,
     videoStream: null,
     scanInterval: null,
+    
+    // 一括スキャン用
     isBatchMode: false,
     batchResults: [],
     
@@ -49,8 +51,12 @@ const QRScanner = {
             // ビデオ再生開始
             await new Promise((resolve) => {
                 this.videoElement.onloadedmetadata = () => {
-                    this.videoElement.play();
-                    resolve();
+                    this.videoElement.play()
+                        .then(() => resolve())
+                        .catch(error => {
+                            console.error("ビデオ再生エラー:", error);
+                            resolve(); // エラーでも続行
+                        });
                 };
             });
             
@@ -90,9 +96,27 @@ const QRScanner = {
         this.isScanning = false;
     },
     
+    // 一括スキャンモードの切り替え
+    toggleBatchMode(enabled) {
+        this.isBatchMode = enabled;
+        
+        if (enabled) {
+            this.batchResults = [];
+            // バッチモードUI表示
+            document.getElementById('batch-scan-container').classList.remove('hidden');
+            document.getElementById('batch-count').textContent = '0件';
+            document.getElementById('batch-items').innerHTML = '';
+        } else {
+            // バッチモードUI非表示
+            document.getElementById('batch-scan-container').classList.add('hidden');
+        }
+        
+        console.log("一括スキャンモード:", enabled ? "オン" : "オフ");
+    },
+    
     // ビデオフレームからQRコードをスキャン
     scanVideoFrame() {
-        if (!this.isScanning || !this.videoElement.readyState === this.videoElement.HAVE_ENOUGH_DATA) {
+        if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
             return;
         }
         
@@ -112,8 +136,7 @@ const QRScanner = {
                 this.canvasElement.height
             );
             
-            // jsQRライブラリでQRコードを検出（外部ライブラリ依存）
-            // 注: jsQR.jsをインクルードする必要があります
+            // jsQRライブラリでQRコードを検出
             const code = jsQR(
                 imageData.data, 
                 imageData.width, 
@@ -127,14 +150,39 @@ const QRScanner = {
             if (code) {
                 console.log("QRコード検出:", code.data);
                 
-                // スキャン音の再生（オプション）
+                // スキャン音の再生
                 this.playBeepSound();
                 
-                // スキャン結果の通知
-                App.showScanResult(code.data);
-                
-                // スキャンを一時停止
-                this.stop();
+                if (this.isBatchMode) {
+                    // 一括モードの場合は結果を追加
+                    if (!this.batchResults.some(item => item.data === code.data)) {
+                        this.batchResults.push({
+                            id: Date.now().toString(),
+                            data: code.data,
+                            timestamp: new Date().toISOString()
+                        });
+                        
+                        console.log("一括スキャン結果追加:", this.batchResults.length + "件目");
+                        
+                        // UI更新
+                        App.updateBatchUI(this.batchResults);
+                        
+                        // 短時間停止してから再開（連続読み取り防止）
+                        clearInterval(this.scanInterval);
+                        this.scanInterval = null;
+                        
+                        setTimeout(() => {
+                            // 新しいインターバルを設定
+                            if (this.isScanning && !this.scanInterval) {
+                                this.scanInterval = setInterval(() => this.scanVideoFrame(), 200);
+                            }
+                        }, 1000);
+                    }
+                } else {
+                    // 通常モード
+                    App.showScanResult(code.data);
+                    this.stop();
+                }
             }
             
         } catch (error) {
@@ -211,53 +259,6 @@ const QRScanner = {
             
         } catch (error) {
             console.error("ビープ音の再生に失敗:", error);
-        }
-    },
-
-    // 一括スキャンモードの切り替え
-    toggleBatchMode(enabled) {
-        this.isBatchMode = enabled;
-        if (enabled) {
-        this.batchResults = [];
-        // バッチモードUI表示
-        document.getElementById('batch-scan-container').classList.remove('hidden');
-        document.getElementById('batch-count').textContent = '0件';
-        document.getElementById('batch-items').innerHTML = '';
-        } else {
-        // バッチモードUI非表示
-        document.getElementById('batch-scan-container').classList.add('hidden');
-        }
-    },
-  
-    // scanVideoFrame() メソッド内の変更部分
-    if (code) {
-        console.log("QRコード検出:", code.data);
-        
-        // スキャン音の再生
-        this.playBeepSound();
-        
-        if (this.isBatchMode) {
-        // 一括モードの場合は結果を追加
-        if (!this.batchResults.some(item => item.data === code.data)) {
-            this.batchResults.push({
-            id: Date.now().toString(),
-            data: code.data,
-            timestamp: new Date().toISOString()
-            });
-            
-            // UI更新
-            App.updateBatchUI(this.batchResults);
-            
-            // 短時間停止してから再開（連続読み取り防止）
-            this.stop();
-            setTimeout(() => {
-            this.start();
-            }, 1000);
-        }
-        } else {
-        // 通常モード - 既存のコード
-        App.showScanResult(code.data);
-        this.stop();
         }
     }
 };

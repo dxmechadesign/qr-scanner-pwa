@@ -275,18 +275,11 @@ button {
     margin-bottom: 0.25rem;
 }
 
-/* ユーティリティ */
-.hidden {
-    display: none;
-}
-
 /* 一括スキャン用スタイル */
 .batch-scan-container {
-    margin-top: 1rem;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     padding: 1rem;
+    border-top: 1px solid var(--border-color);
+    margin-top: 0.5rem;
 }
 
 .batch-header {
@@ -309,6 +302,9 @@ button {
     max-height: 200px;
     overflow-y: auto;
     margin-bottom: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: #f8f9fa;
 }
 
 .batch-item {
@@ -319,11 +315,16 @@ button {
     border-bottom: 1px solid var(--border-color);
 }
 
+.batch-item:last-child {
+    border-bottom: none;
+}
+
 .batch-item-data {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: monospace;
 }
 
 .batch-item-remove {
@@ -338,6 +339,11 @@ button {
 .batch-actions {
     display: flex;
     gap: 0.5rem;
+}
+
+/* ユーティリティ */
+.hidden {
+    display: none !important;
 }
 
 /* レスポンシブデザイン */
