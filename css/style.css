@@ -4,6 +4,8 @@
     --secondary-color: #6c757d;
     --success-color: #28a745;
     --danger-color: #dc3545;
+    --warning-color: #ffc107;
+    --info-color: #17a2b8;
     --background-color: #f8f9fa;
     --text-color: #343a40;
     --border-color: #dee2e6;
@@ -117,6 +119,43 @@ main {
     bottom: -2px;
     border: 1px solid rgba(255, 255, 255, 0.5);
     border-radius: 10px;
+}
+
+/* スキャン状態表示 */
+.scan-status {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    z-index: 5;
+    transition: all 0.3s ease;
+}
+
+.scan-status.scanning {
+    background-color: var(--primary-color);
+}
+
+.scan-status.success {
+    background-color: var(--success-color);
+}
+
+.scan-status.processing {
+    background-color: var(--warning-color);
+    color: black;
+}
+
+.scan-status.stopped {
+    background-color: var(--secondary-color);
+}
+
+.scan-status.error {
+    background-color: var(--danger-color);
 }
 
 .scanner-controls {
@@ -319,12 +358,31 @@ button {
     border-bottom: none;
 }
 
+/* 重複アイテムのスタイル */
+.batch-item.duplicate {
+    background-color: rgba(255, 193, 7, 0.1);
+}
+
 .batch-item-data {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: monospace;
+}
+
+.batch-item-status {
+    margin: 0 0.5rem;
+    font-size: 0.8rem;
+}
+
+.duplicate-label {
+    background-color: var(--warning-color);
+    color: #000;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: bold;
 }
 
 .batch-item-remove {

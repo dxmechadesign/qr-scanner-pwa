@@ -21,6 +21,7 @@ const App = {
             batchCount: document.getElementById('batch-count'),
             batchComplete: document.getElementById('batch-complete'),
             batchCancel: document.getElementById('batch-cancel'),
+            scanStatus: document.getElementById('scan-status'),
             navButtons: {
                 scan: document.getElementById('nav-scan'),
                 history: document.getElementById('nav-history'),
@@ -196,8 +197,17 @@ const App = {
         batchResults.forEach(item => {
             const batchItem = document.createElement('div');
             batchItem.className = 'batch-item';
+            
+            // 重複アイテムにはクラスを追加
+            if (item.isDuplicate) {
+                batchItem.classList.add('duplicate');
+            }
+            
             batchItem.innerHTML = `
                 <div class="batch-item-data">${item.data}</div>
+                <div class="batch-item-status">
+                    ${item.isDuplicate ? '<span class="duplicate-label">重複</span>' : ''}
+                </div>
                 <button class="batch-item-remove" data-id="${item.id}">✕</button>
             `;
             batchItems.appendChild(batchItem);
@@ -212,6 +222,9 @@ const App = {
                 this.updateBatchUI(QRScanner.batchResults);
             });
         });
+        
+        // 自動スクロールで最新の項目を表示
+        batchItems.scrollTop = batchItems.scrollHeight;
     },
 
     // スキャンデータの保存

@@ -25,6 +25,8 @@
                 <video id="qr-video" playsinline></video>
                 <div class="scan-region-highlight"></div>
                 <div class="scan-region-highlight-svg"></div>
+                <!-- スキャン状態表示 -->
+                <div id="scan-status" class="scan-status">準備中</div>
             </div>
             
             <div class="scanner-controls">
@@ -46,7 +48,7 @@
                 </div>
             </div>
             
-            <!-- 追加: 一括スキャン用UI -->
+            <!-- 一括スキャン用UI -->
             <div id="batch-scan-container" class="batch-scan-container hidden">
                 <div class="batch-header">
                     <h3>一括スキャン</h3>

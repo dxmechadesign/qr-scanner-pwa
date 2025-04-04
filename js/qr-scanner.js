@@ -7,6 +7,7 @@ const QRScanner = {
     canvasContext: null,
     videoStream: null,
     scanInterval: null,
+    isProcessing: false, // スキャン処理中かどうかのフラグ
     
     // 一括スキャン用
     isBatchMode: false,
@@ -23,6 +24,9 @@ const QRScanner = {
         
         // 利用可能なカメラを列挙
         this.listCameras();
+        
+        // 状態表示要素の参照
+        this.scanStatusElement = document.getElementById('scan-status');
     },
     
     // QRスキャン開始
@@ -30,6 +34,9 @@ const QRScanner = {
         if (this.isScanning) return Promise.resolve();
         
         try {
+            // 状態表示の更新
+            this.updateScanStatus('カメラ起動中...');
+            
             // カメラストリームの取得
             const constraints = { 
                 video: { 
@@ -66,12 +73,17 @@ const QRScanner = {
             
             // QRコードスキャン処理の定期実行
             this.isScanning = true;
+            this.isProcessing = false;
             this.scanInterval = setInterval(() => this.scanVideoFrame(), 200);
+            
+            // 状態表示の更新
+            this.updateScanStatus('スキャン中...');
             
             return Promise.resolve();
             
         } catch (error) {
             console.error("QRスキャナー起動エラー:", error);
+            this.updateScanStatus('カメラエラー');
             return Promise.reject(error);
         }
     },
@@ -94,6 +106,10 @@ const QRScanner = {
         
         this.videoElement.srcObject = null;
         this.isScanning = false;
+        this.isProcessing = false;
+        
+        // 状態表示の更新
+        this.updateScanStatus('停止中');
     },
     
     // 一括スキャンモードの切り替え
@@ -106,6 +122,9 @@ const QRScanner = {
             document.getElementById('batch-scan-container').classList.remove('hidden');
             document.getElementById('batch-count').textContent = '0件';
             document.getElementById('batch-items').innerHTML = '';
+            
+            // 状態表示の更新
+            this.updateScanStatus('一括スキャン中...');
         } else {
             // バッチモードUI非表示
             document.getElementById('batch-scan-container').classList.add('hidden');
@@ -117,6 +136,11 @@ const QRScanner = {
     // ビデオフレームからQRコードをスキャン
     scanVideoFrame() {
         if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
+            return;
+        }
+        
+        // すでに処理中の場合はスキップ
+        if (this.isProcessing) {
             return;
         }
         
@@ -154,30 +178,35 @@ const QRScanner = {
                 this.playBeepSound();
                 
                 if (this.isBatchMode) {
-                    // 一括モードの場合は結果を追加
-                    if (!this.batchResults.some(item => item.data === code.data)) {
-                        this.batchResults.push({
-                            id: Date.now().toString(),
-                            data: code.data,
-                            timestamp: new Date().toISOString()
-                        });
-                        
-                        console.log("一括スキャン結果追加:", this.batchResults.length + "件目");
-                        
-                        // UI更新
-                        App.updateBatchUI(this.batchResults);
-                        
-                        // 短時間停止してから再開（連続読み取り防止）
-                        clearInterval(this.scanInterval);
-                        this.scanInterval = null;
-                        
-                        setTimeout(() => {
-                            // 新しいインターバルを設定
-                            if (this.isScanning && !this.scanInterval) {
-                                this.scanInterval = setInterval(() => this.scanVideoFrame(), 200);
-                            }
-                        }, 1000);
-                    }
+                    // 一括モードの場合は結果を追加（重複も許可）
+                    const timestamp = new Date().toISOString();
+                    const newId = Date.now().toString();
+                    
+                    // 重複フラグを確認（表示目的）
+                    const isDuplicate = this.batchResults.some(item => item.data === code.data);
+                    
+                    // 新しいスキャン結果を追加
+                    this.batchResults.push({
+                        id: newId,
+                        data: code.data,
+                        timestamp: timestamp,
+                        isDuplicate: isDuplicate
+                    });
+                    
+                    console.log("一括スキャン結果追加:", this.batchResults.length + "件目", isDuplicate ? "(重複)" : "");
+                    
+                    // UI更新
+                    App.updateBatchUI(this.batchResults);
+                    
+                    // 処理中フラグを設定して一時的にスキャンを停止
+                    this.isProcessing = true;
+                    this.updateScanStatus('読み取り成功... 準備中');
+                    
+                    // 短時間後に再スキャン可能にする
+                    setTimeout(() => {
+                        this.isProcessing = false;
+                        this.updateScanStatus('スキャン中...');
+                    }, 1500); // 1.5秒後に再開
                 } else {
                     // 通常モード
                     App.showScanResult(code.data);
@@ -187,6 +216,28 @@ const QRScanner = {
             
         } catch (error) {
             console.error("QRスキャン処理エラー:", error);
+            this.isProcessing = false;
+        }
+    },
+    
+    // スキャン状態の更新
+    updateScanStatus(statusText) {
+        if (this.scanStatusElement) {
+            this.scanStatusElement.textContent = statusText;
+            
+            // 状態に応じたクラスを設定
+            this.scanStatusElement.className = 'scan-status';
+            if (statusText.includes('スキャン中')) {
+                this.scanStatusElement.classList.add('scanning');
+            } else if (statusText.includes('読み取り成功')) {
+                this.scanStatusElement.classList.add('success');
+            } else if (statusText.includes('準備中')) {
+                this.scanStatusElement.classList.add('processing');
+            } else if (statusText.includes('停止')) {
+                this.scanStatusElement.classList.add('stopped');
+            } else if (statusText.includes('エラー')) {
+                this.scanStatusElement.classList.add('error');
+            }
         }
     },
     
