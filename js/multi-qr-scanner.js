@@ -8,16 +8,7 @@ const MultiQRScanner = {
     
     // 初期化
     async init() {
-        console.log('MultiQRScanner: 初期化中...');
-
-        // ZXingライブラリが正しく読み込まれているか確認
-        if (typeof window.ZXing === 'undefined') {
-            console.error('ZXingライブラリが見つかりません');
-            this.showToast('ZXingライブラリが見つかりません。ページを再読み込みしてください。');
-            return Promise.reject(new Error('ZXingライブラリがロードされていません'));
-        }
-
-        console.log('ZXing確認:', window.ZXing);
+        console.log('MultiQRScanner: 初期化開始');
         
         // 要素の参照
         this.videoElement = document.getElementById('multi-qr-video');
@@ -27,41 +18,50 @@ const MultiQRScanner = {
         this.resultsList = document.getElementById('detected-codes-list');
         this.statusElement = document.getElementById('detection-status');
         
-        console.log('要素の参照:', {
-            video: this.videoElement,
-            button: this.captureButton
-        });
-        
-        // captureButtonが見つからない場合
-        if (!this.captureButton) {
-            console.error('撮影ボタンが見つかりません！');
-            return Promise.reject(new Error('撮影ボタンが見つかりません'));
+        // ZXingの利用可能性をチェック
+        if (typeof window.ZXing === 'undefined') {
+            console.error('ZXingライブラリが利用できません');
+            console.log('window.ZXing:', window.ZXing);
+            console.log('window keys:', Object.keys(window).filter(k => k.includes('ZXing')));
+            
+            // エラーを表示するが、アプリは継続させる
+            if (typeof App !== 'undefined' && App.showToast) {
+                App.showToast('複数QRコード機能は利用できません');
+            } else {
+                alert('複数QRコード機能は利用できません');
+            }
+            return;
         }
 
-        // ZXingライブラリの動的インポート
         try {
-            console.log('ZXingライブラリを読み込み中...');
-            // 注: 実際の環境では、下記のインポート文を適切に調整してください
-            const ZXing = await import('@zxing/library');
-            const { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } = ZXing;
+            console.log('ZXingリーダーを初期化中...');
             
             // ヒントマップの設定
             const hints = new Map();
-            hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
-            hints.set(DecodeHintType.TRY_HARDER, true);
             
-            // マルチフォーマットリーダーの初期化
-            this.reader = new BrowserMultiFormatReader(hints);
+            // グローバルオブジェクトから直接アクセス
+            const ZXing = window.ZXing;
+            
+            if (!ZXing.DecodeHintType) {
+                console.error('DecodeHintType が見つかりません');
+                console.log('ZXing object:', ZXing);
+                throw new Error('ZXingの必要なプロパティが見つかりません');
+            }
+            
+            hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
+            hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+            
+            // リーダーの初期化
+            this.reader = new ZXing.BrowserMultiFormatReader(hints);
             console.log('ZXingリーダーの初期化完了');
             
             // イベントリスナーの設定
             this.setupEventListeners();
-
-            return Promise.resolve(); // 初期化成功を示す
             
+            console.log('MultiQRScanner: 初期化完了');
         } catch (error) {
-            console.error('ZXingライブラリの読み込みに失敗:', error);
-            this.showError('QRコード検出機能の初期化に失敗しました');
+            console.error('ZXingリーダーの初期化エラー:', error);
+            alert('QRコード検出機能の初期化に失敗しました: ' + error.message);
         }
     },
     
