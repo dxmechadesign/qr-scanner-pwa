@@ -10,7 +10,7 @@ const MultiQRScanner = {
     async init() {
         console.log('MultiQRScanner: 初期化中...');
         // 要素の参照
-        this.videoElement = document.getElementById('qr-video');
+        this.videoElement = document.getElementById('multi-qr-video');
         this.canvasElement = document.createElement('canvas');
         this.canvasContext = this.canvasElement.getContext('2d');
         this.captureButton = document.getElementById('capture-button');
