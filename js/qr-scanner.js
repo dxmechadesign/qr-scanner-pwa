@@ -12,7 +12,7 @@ const QRScanner = {
     
     // スキャン領域とスケーリング設定
     scanAreaWidth: 0.6,    // キャンバスの幅に対する比率（60%）
-    scanAreaHeight: 0.3,   // キャンバスの高さに対する比率（60%）
+    scanAreaHeight: 0.6,   // キャンバスの高さに対する比率（60%）
     scaleFactor: 0.5,      // スケーリング係数（50%）
     
     // 一括スキャン用
@@ -34,23 +34,99 @@ const QRScanner = {
         // 状態表示要素の参照
         this.scanStatusElement = document.getElementById('scan-status');
         
-        // スキャン領域の視覚化
+        // スキャン領域のハイライト要素
+        this.scanHighlightElement = document.querySelector('.scan-region-highlight');
+        
+        // ウィンドウリサイズ時にスキャン領域サイズを更新
+        window.addEventListener('resize', () => {
+            this.updateScanRegionHighlight();
+        });
+        
+        // 初期化時にもスキャン領域を更新
         this.updateScanRegionHighlight();
+        
+        // スキャンガイドラインの追加
+        this.addScanGuidelines();
         
         // 利用可能なカメラを列挙
         this.listCameras();
     },
     
+    // スキャンガイドラインを追加
+    addScanGuidelines() {
+        // 既にある場合は処理をスキップ
+        if (document.querySelector('.scan-guidelines')) {
+            return;
+        }
+        
+        // 角のマーカーを追加
+        const viewfinder = document.querySelector('.viewfinder');
+        if (viewfinder) {
+            const guidelines = document.createElement('div');
+            guidelines.className = 'scan-guidelines';
+            
+            // 四隅のコーナーガイド
+            const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+            corners.forEach(position => {
+                const corner = document.createElement('div');
+                corner.className = `scan-corner ${position}`;
+                guidelines.appendChild(corner);
+            });
+            
+            // 中央の十字線ガイド
+            const centerLine = document.createElement('div');
+            centerLine.className = 'scan-centerline';
+            guidelines.appendChild(centerLine);
+            
+            // 移動するスキャンライン
+            const scanLine = document.createElement('div');
+            scanLine.className = 'scan-line';
+            guidelines.appendChild(scanLine);
+            
+            // ビューファインダーの最初の子要素として追加
+            viewfinder.insertBefore(guidelines, viewfinder.firstChild);
+        }
+    },
+    
     // スキャン領域のハイライト表示を更新
     updateScanRegionHighlight() {
-        const highlight = document.querySelector('.scan-region-highlight');
-        if (highlight) {
-            // スキャン領域の視覚的表現を更新
-            const width = Math.min(200, window.innerWidth * 0.5); // 最大幅を200pxに制限
-            const height = width; // 正方形にする
+        if (this.scanHighlightElement) {
+            // ビデオ要素の表示サイズを取得
+            const videoRect = this.videoElement.getBoundingClientRect();
+            const videoWidth = videoRect.width;
+            const videoHeight = videoRect.height;
             
-            highlight.style.width = `${width}px`;
-            highlight.style.height = `${height}px`;
+            // スキャン領域のサイズを計算（実際の表示サイズに対して）
+            const highlightWidth = videoWidth * this.scanAreaWidth;
+            const highlightHeight = videoHeight * this.scanAreaHeight;
+            
+            // 正方形にする場合（小さい方に合わせる）
+            const size = Math.min(highlightWidth, highlightHeight);
+            
+            // スタイルを更新
+            this.scanHighlightElement.style.width = `${size}px`;
+            this.scanHighlightElement.style.height = `${size}px`;
+            
+            // スキャンラインのアニメーションを適用
+            const scanLine = document.querySelector('.scan-line');
+            if (scanLine) {
+                scanLine.style.width = `${size - 10}px`;
+                scanLine.style.animationDuration = '2s';
+            }
+            
+            // コーナーガイドの位置を調整
+            const guidelines = document.querySelector('.scan-guidelines');
+            if (guidelines) {
+                guidelines.style.width = `${size}px`;
+                guidelines.style.height = `${size}px`;
+            }
+            
+            // 中央の十字線のサイズを調整
+            const centerLine = document.querySelector('.scan-centerline');
+            if (centerLine) {
+                centerLine.style.width = `${size - 10}px`;
+                centerLine.style.height = `${size - 10}px`;
+            }
         }
     },
     
@@ -84,7 +160,11 @@ const QRScanner = {
             await new Promise((resolve) => {
                 this.videoElement.onloadedmetadata = () => {
                     this.videoElement.play()
-                        .then(() => resolve())
+                        .then(() => {
+                            // ビデオが開始したらスキャン領域を更新
+                            setTimeout(() => this.updateScanRegionHighlight(), 300);
+                            resolve();
+                        })
                         .catch(error => {
                             console.error("ビデオ再生エラー:", error);
                             resolve(); // エラーでも続行
@@ -100,6 +180,9 @@ const QRScanner = {
             this.isScanning = true;
             this.isProcessing = false;
             this.scanInterval = setInterval(() => this.scanVideoFrame(), 200);
+            
+            // スキャンUIの表示
+            this.toggleScanUI(true);
             
             // 状態表示の更新
             this.updateScanStatus('スキャン中...');
@@ -133,8 +216,30 @@ const QRScanner = {
         this.isScanning = false;
         this.isProcessing = false;
         
+        // スキャンUIの非表示
+        this.toggleScanUI(false);
+        
         // 状態表示の更新
         this.updateScanStatus('停止中');
+    },
+    
+    // スキャンUI表示の切り替え
+    toggleScanUI(show) {
+        // スキャンラインアニメーションの制御
+        const scanLine = document.querySelector('.scan-line');
+        if (scanLine) {
+            if (show) {
+                scanLine.classList.add('animated');
+            } else {
+                scanLine.classList.remove('animated');
+            }
+        }
+        
+        // その他のUI要素の表示/非表示
+        const guidelines = document.querySelector('.scan-guidelines');
+        if (guidelines) {
+            guidelines.style.display = show ? 'block' : 'none';
+        }
     },
     
     // 一括スキャンモードの切り替え
@@ -245,6 +350,9 @@ const QRScanner = {
                     this.isProcessing = true;
                     this.updateScanStatus(`読み取り${isDuplicate ? '(重複)' : '成功'}... 準備中`);
                     
+                    // 読み取り成功を視覚的に表示
+                    this.showScanSuccess();
+                    
                     // 短時間後に再スキャン可能にする
                     setTimeout(() => {
                         this.isProcessing = false;
@@ -252,6 +360,7 @@ const QRScanner = {
                     }, 1500); // 1.5秒後に再開
                 } else {
                     // 通常モード
+                    this.showScanSuccess();
                     App.showScanResult(code.data);
                     this.stop();
                 }
@@ -260,6 +369,20 @@ const QRScanner = {
         } catch (error) {
             console.error("QRスキャン処理エラー:", error);
             this.isProcessing = false;
+        }
+    },
+    
+    // スキャン成功時の視覚的フィードバック
+    showScanSuccess() {
+        // スキャン領域を一時的に成功色に変更
+        const highlight = document.querySelector('.scan-region-highlight');
+        if (highlight) {
+            highlight.classList.add('success');
+            
+            // 元に戻す
+            setTimeout(() => {
+                highlight.classList.remove('success');
+            }, 500);
         }
     },
     
