@@ -97,6 +97,94 @@ const App = {
                 this.handleNavigation(key);
             });
         });
+
+        // 一括スキャンボタン
+        this.elements.batchScanButton = document.getElementById('batch-scan-button');
+        this.elements.batchContainer = document.getElementById('batch-scan-container');
+        this.elements.batchItems = document.getElementById('batch-items');
+        this.elements.batchCount = document.getElementById('batch-count');
+        this.elements.batchComplete = document.getElementById('batch-complete');
+        this.elements.batchCancel = document.getElementById('batch-cancel');
+        
+        this.elements.batchScanButton.addEventListener('click', () => {
+            QRScanner.toggleBatchMode(true);
+            QRScanner.start()
+            .then(() => {
+                this.elements.startButton.disabled = true;
+                this.elements.stopButton.disabled = false;
+                this.elements.batchScanButton.disabled = true;
+            })
+            .catch(err => {
+                alert('カメラへのアクセスに失敗しました: ' + err.message);
+                console.error('カメラアクセスエラー:', err);
+            });
+        });
+        
+        // 一括スキャン完了ボタン
+        this.elements.batchComplete.addEventListener('click', () => {
+            const results = QRScanner.batchResults;
+            if (results.length > 0) {
+            // 全ての結果を保存
+            results.forEach(scan => {
+                this.saveScannedData(scan.data);
+            });
+            
+            this.showToast(`${results.length}件のQRコードを保存しました`);
+            
+            // バッチモード終了
+            QRScanner.stop();
+            QRScanner.toggleBatchMode(false);
+            this.elements.startButton.disabled = false;
+            this.elements.stopButton.disabled = true;
+            this.elements.batchScanButton.disabled = false;
+            
+            // 履歴を更新
+            this.displayHistory();
+            } else {
+            this.showToast('スキャン結果がありません');
+            }
+        });
+        
+        // 一括スキャンキャンセルボタン
+        this.elements.batchCancel.addEventListener('click', () => {
+            QRScanner.stop();
+            QRScanner.toggleBatchMode(false);
+            this.elements.startButton.disabled = false;
+            this.elements.stopButton.disabled = true;
+            this.elements.batchScanButton.disabled = false;
+            this.showToast('一括スキャンをキャンセルしました');
+        });
+        },
+
+        // 一括スキャンUI更新メソッド
+        updateBatchUI(batchResults) {
+        const batchItems = this.elements.batchItems;
+        const batchCount = this.elements.batchCount;
+        
+        // カウント更新
+        batchCount.textContent = `${batchResults.length}件`;
+        
+        // リスト更新
+        batchItems.innerHTML = '';
+        batchResults.forEach(item => {
+            const batchItem = document.createElement('div');
+            batchItem.className = 'batch-item';
+            batchItem.innerHTML = `
+            <div class="batch-item-data">${item.data}</div>
+            <button class="batch-item-remove" data-id="${item.id}">✕</button>
+            `;
+            batchItems.appendChild(batchItem);
+        });
+        
+        // 削除ボタンのイベント設定
+        const removeButtons = document.querySelectorAll('.batch-item-remove');
+        removeButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+            const id = e.target.getAttribute('data-id');
+            QRScanner.batchResults = QRScanner.batchResults.filter(item => item.id !== id);
+            this.updateBatchUI(QRScanner.batchResults);
+            });
+        });
     },
 
     // スキャン結果の表示
