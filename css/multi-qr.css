@@ -1,5 +1,22 @@
 /* 複数QRコード読み取り用のスタイル */
-
+/* ビデオ要素のスタイル調整 */
+#multi-qr-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* coverからcontainに変更 */
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  
+  .camera-container {
+    position: relative;
+    width: 100%;
+    height: 0;
+    padding-bottom: 75%; /* 必要に応じて調整 */
+    background-color: #000;
+    overflow: hidden;
+  }
 /* コンテナ */
 .multi-qr-container {
     margin-bottom: 2rem;

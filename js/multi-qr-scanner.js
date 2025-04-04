@@ -184,58 +184,91 @@ const MultiQRScanner = {
         }
         
         this.processing = true;
-        
-        // キャンバスサイズを設定
-        this.canvasElement.width = this.videoElement.videoWidth;
-        this.canvasElement.height = this.videoElement.videoHeight;
-        
-        // ビデオフレームをキャンバスに描画
-        this.canvasContext.drawImage(
-            this.videoElement, 
-            0, 0, 
-            this.canvasElement.width, 
-            this.canvasElement.height
-        );
-        
-        // キャプチャした画像を保存
-        this.capturedImage = this.canvasElement.toDataURL('image/jpeg', 0.9);
-        
-        // プレビュー表示
-        document.getElementById('captured-image').src = this.capturedImage;
-        
-        // 結果UIに切り替え
-        this.showResultsUI();
-        
-        // QRコード検出処理
-        this.detectQRCodes();
+
+        try {
+            // キャンバスサイズをビデオの実際のサイズに合わせる
+            const videoWidth = this.videoElement.videoWidth;
+            const videoHeight = this.videoElement.videoHeight;
+            
+            console.log(`ビデオサイズ: ${videoWidth}x${videoHeight}`);
+            
+            if (videoWidth === 0 || videoHeight === 0) {
+              this.showError('ビデオサイズが取得できません');
+              this.processing = false;
+              return;
+            }
+            
+            this.canvasElement.width = videoWidth;
+            this.canvasElement.height = videoHeight;
+            
+            // ビデオフレームをキャンバスに描画
+            this.canvasContext.drawImage(
+              this.videoElement, 
+              0, 0, 
+              videoWidth, videoHeight
+            );
+            
+            // 画質を調整 (0.8は画質と容量のバランス)
+            this.capturedImage = this.canvasElement.toDataURL('image/jpeg', 0.8);
+            
+            // デバッグ用に画像サイズを表示
+            const img = new Image();
+            img.src = this.capturedImage;
+            img.onload = () => {
+              console.log(`キャプチャした画像のサイズ: ${img.width}x${img.height}`);
+            };
+            
+            // プレビュー表示
+            document.getElementById('captured-image').src = this.capturedImage;
+            
+            // 結果UIに切り替え
+            this.showResultsUI();
+            
+            // QRコード検出処理
+            this.detectQRCodes();
+          } catch (error) {
+            console.error('画像キャプチャエラー:', error);
+            this.showError('画像の撮影に失敗しました');
+            this.processing = false;
+          }
     },
     
-    // QRコード検出
+    // detectQRCodes メソッド内の処理を改善
     async detectQRCodes() {
         if (!this.reader || !this.capturedImage) {
-            this.processing = false;
-            return;
+        this.processing = false;
+        return;
         }
         
         try {
-            // 処理中表示
-            this.statusElement.textContent = 'QRコード検出中...';
-            this.statusElement.className = 'detection-status processing';
-            
-            // 画像要素の作成
-            const img = new Image();
-            img.src = this.capturedImage;
-            
-            await new Promise(resolve => {
-                img.onload = resolve;
-            });
-            
-            console.log('画像読み込み完了、QRコード検出を開始...');
-            
-            // ZXingで複数QRコード検出
+        // 処理中表示
+        this.statusElement.textContent = 'QRコード検出中...';
+        this.statusElement.className = 'detection-status processing';
+        
+        // 画像要素の作成
+        const img = new Image();
+        img.src = this.capturedImage;
+        
+        await new Promise(resolve => {
+            img.onload = resolve;
+        });
+        
+        console.log('画像サイズ:', img.width, img.height);
+        
+        // 画像が正しく読み込まれているか確認
+        if (img.width === 0 || img.height === 0) {
+            throw new Error('画像が正しく読み込まれていません');
+        }
+        
+        console.log('QRコード検出開始...');
+        
+        try {
+            // ZXingで検出を試みる
             const results = await this.reader.decodeMultiple(img);
+            console.log('検出結果:', results);
             
-            // 検出結果を保存
+            // 結果を処理
+            if (results && results.length > 0) {
             this.detectedCodes = results.map(result => ({
                 id: Date.now() + Math.random().toString(36).substring(2, 9),
                 data: result.getText(),
@@ -243,24 +276,33 @@ const MultiQRScanner = {
                 timestamp: new Date().toISOString()
             }));
             
-            console.log(`${this.detectedCodes.length}個のQRコードを検出:`, this.detectedCodes);
-            
-            // UI更新
-            this.updateResultsUI();
-            
-            // 処理完了表示
-            this.statusElement.textContent = 
-                `${this.detectedCodes.length}個のQRコードを検出しました`;
-            this.statusElement.className = 'detection-status success';
-            
-        } catch (error) {
-            console.error('QRコード検出エラー:', error);
-            this.statusElement.textContent = 'QRコードが見つかりませんでした';
-            this.statusElement.className = 'detection-status error';
+            console.log(`${this.detectedCodes.length}個のQRコードを検出`);
+            } else {
+            console.log('QRコードが検出されませんでした');
             this.detectedCodes = [];
-            this.updateResultsUI();
+            }
+        } catch (decodeError) {
+            console.error('QRコード検出エラー (ZXing):', decodeError);
+            this.detectedCodes = [];
+        }
+        
+        // UI更新
+        this.updateResultsUI();
+        
+        // 処理完了表示
+        this.statusElement.textContent = 
+            `${this.detectedCodes.length}個のQRコードを検出しました`;
+        this.statusElement.className = this.detectedCodes.length > 0 ? 
+            'detection-status success' : 'detection-status error';
+        
+        } catch (error) {
+        console.error('QRコード検出処理エラー:', error);
+        this.statusElement.textContent = 'QRコードが見つかりませんでした';
+        this.statusElement.className = 'detection-status error';
+        this.detectedCodes = [];
+        this.updateResultsUI();
         } finally {
-            this.processing = false;
+        this.processing = false;
         }
     },
     
