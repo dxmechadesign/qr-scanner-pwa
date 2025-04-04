@@ -10,6 +10,11 @@ const QRScanner = {
     isProcessing: false, // スキャン処理中かどうかのフラグ
     lastScannedCode: null, // 最後にスキャンされたコード
     
+    // スキャン領域とスケーリング設定
+    scanAreaWidth: 0.6,    // キャンバスの幅に対する比率（60%）
+    scanAreaHeight: 0.6,   // キャンバスの高さに対する比率（60%）
+    scaleFactor: 0.5,      // スケーリング係数（50%）
+    
     // 一括スキャン用
     isBatchMode: false,
     batchResults: [],
@@ -21,13 +26,32 @@ const QRScanner = {
         
         // キャンバス要素の作成（オフスクリーンレンダリング用）
         this.canvasElement = document.createElement('canvas');
-        this.canvasContext = this.canvasElement.getContext('2d', { willReadFrequently: true });
-        
-        // 利用可能なカメラを列挙
-        this.listCameras();
+        this.canvasContext = this.canvasElement.getContext('2d', { 
+            willReadFrequently: true,
+            alpha: false  // アルファチャンネルを無効化してパフォーマンス向上
+        });
         
         // 状態表示要素の参照
         this.scanStatusElement = document.getElementById('scan-status');
+        
+        // スキャン領域の視覚化
+        this.updateScanRegionHighlight();
+        
+        // 利用可能なカメラを列挙
+        this.listCameras();
+    },
+    
+    // スキャン領域のハイライト表示を更新
+    updateScanRegionHighlight() {
+        const highlight = document.querySelector('.scan-region-highlight');
+        if (highlight) {
+            // スキャン領域の視覚的表現を更新
+            const width = Math.min(200, window.innerWidth * 0.5); // 最大幅を200pxに制限
+            const height = width; // 正方形にする
+            
+            highlight.style.width = `${width}px`;
+            highlight.style.height = `${height}px`;
+        }
     },
     
     // QRスキャン開始
@@ -134,7 +158,7 @@ const QRScanner = {
         console.log("一括スキャンモード:", enabled ? "オン" : "オフ");
     },
     
-    // ビデオフレームからQRコードをスキャン
+    // ビデオフレームからQRコードをスキャン（最適化版）
     scanVideoFrame() {
         if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
             return;
@@ -146,30 +170,48 @@ const QRScanner = {
         }
         
         try {
-            // ビデオフレームをキャンバスに描画
+            const perfStart = performance.now();
+            
+            // スキャン領域のサイズを計算（中央部分）
+            const canvasWidth = this.canvasElement.width;
+            const canvasHeight = this.canvasElement.height;
+            
+            const centerWidth = canvasWidth * this.scanAreaWidth;
+            const centerHeight = canvasHeight * this.scanAreaHeight;
+            const centerX = (canvasWidth - centerWidth) / 2;
+            const centerY = (canvasHeight - centerHeight) / 2;
+            
+            // 縮小サイズを計算
+            const scaledWidth = centerWidth * this.scaleFactor;
+            const scaledHeight = centerHeight * this.scaleFactor;
+            
+            // 一度キャンバスをクリア
+            this.canvasContext.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
+            
+            // ビデオから中央部分を抽出して縮小描画（1ステップで行う）
             this.canvasContext.drawImage(
-                this.videoElement, 
-                0, 0, 
-                this.canvasElement.width, 
-                this.canvasElement.height
+                this.videoElement,
+                centerX, centerY, centerWidth, centerHeight,  // ソース領域（ビデオの中央部分）
+                0, 0, scaledWidth, scaledHeight               // 描画先（縮小サイズ）
             );
             
-            // キャンバスから画像データを取得
-            const imageData = this.canvasContext.getImageData(
-                0, 0, 
-                this.canvasElement.width, 
-                this.canvasElement.height
-            );
+            // 縮小サイズでイメージデータを取得
+            const imageData = this.canvasContext.getImageData(0, 0, scaledWidth, scaledHeight);
             
             // jsQRライブラリでQRコードを検出
             const code = jsQR(
                 imageData.data, 
                 imageData.width, 
-                imageData.height, 
+                imageData.height,
                 {
-                    inversionAttempts: "dontInvert",
+                    inversionAttempts: "dontInvert"
                 }
             );
+            
+            // パフォーマンス計測
+            const perfEnd = performance.now();
+            const scanTime = perfEnd - perfStart;
+            console.log(`スキャン処理時間: ${scanTime.toFixed(2)}ms`);
             
             // QRコードが見つかった場合
             if (code) {
