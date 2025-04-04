@@ -98,6 +98,7 @@ main {
     object-fit: cover;
 }
 
+/* スキャン領域と関連ガイドラインのスタイル */
 .scan-region-highlight {
     position: absolute;
     top: 50%;
@@ -105,20 +106,132 @@ main {
     width: 200px;
     height: 200px;
     transform: translate(-50%, -50%);
-    border: 2px solid var(--primary-color);
-    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.5);
+    border: 2px solid rgba(0, 123, 255, 0.7);
     border-radius: 10px;
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.6);
+    z-index: 4;
+    transition: all 0.3s ease;
 }
 
-.scan-region-highlight::before {
-    content: '';
+.scan-region-highlight.success {
+    border-color: rgba(40, 167, 69, 0.9);
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.6), 0 0 10px 2px rgba(40, 167, 69, 0.9);
+}
+
+/* スキャンガイドライン */
+.scan-guidelines {
     position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 200px;
+    height: 200px;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    pointer-events: none;
+}
+
+/* 四隅のコーナーガイド */
+.scan-corner {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(0, 123, 255, 0.9);
+}
+
+.scan-corner.top-left {
     top: -2px;
     left: -2px;
+    border-right: none;
+    border-bottom: none;
+    border-top-left-radius: 8px;
+}
+
+.scan-corner.top-right {
+    top: -2px;
     right: -2px;
+    border-left: none;
+    border-bottom: none;
+    border-top-right-radius: 8px;
+}
+
+.scan-corner.bottom-left {
     bottom: -2px;
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    border-radius: 10px;
+    left: -2px;
+    border-right: none;
+    border-top: none;
+    border-bottom-left-radius: 8px;
+}
+
+.scan-corner.bottom-right {
+    bottom: -2px;
+    right: -2px;
+    border-left: none;
+    border-top: none;
+    border-bottom-right-radius: 8px;
+}
+
+/* 中央の十字線 */
+.scan-centerline {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 190px;
+    height: 190px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.scan-centerline::before,
+.scan-centerline::after {
+    content: '';
+    position: absolute;
+    background-color: rgba(255, 255, 255, 0.4);
+}
+
+.scan-centerline::before {
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    transform: translateY(-50%);
+}
+
+.scan-centerline::after {
+    top: 0;
+    left: 50%;
+    width: 1px;
+    height: 100%;
+    transform: translateX(-50%);
+}
+
+/* スキャンライン */
+.scan-line {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 190px;
+    height: 2px;
+    background-color: rgba(0, 123, 255, 0.7);
+    transform: translateX(-50%);
+    box-shadow: 0 0 5px rgba(0, 123, 255, 0.7);
+    display: none;
+}
+
+.scan-line.animated {
+    display: block;
+    animation: scanLine 2s ease-in-out infinite;
+}
+
+@keyframes scanLine {
+    0% {
+        top: 5px;
+    }
+    50% {
+        top: calc(100% - 5px);
+    }
+    100% {
+        top: 5px;
+    }
 }
 
 /* スキャン状態表示 */
@@ -133,34 +246,36 @@ main {
     border-radius: 20px;
     font-size: 0.9rem;
     font-weight: bold;
-    z-index: 5;
+    z-index: 6;
     transition: all 0.3s ease;
+    text-align: center;
+    max-width: 80%;
 }
 
 .scan-status.scanning {
-    background-color: var(--primary-color);
+    background-color: rgba(0, 123, 255, 0.8);
 }
 
 .scan-status.success {
-    background-color: var(--success-color);
+    background-color: rgba(40, 167, 69, 0.8);
 }
 
 .scan-status.duplicate {
-    background-color: var(--warning-color);
+    background-color: rgba(255, 193, 7, 0.8);
     color: black;
 }
 
 .scan-status.processing {
-    background-color: var(--warning-color);
+    background-color: rgba(255, 193, 7, 0.8);
     color: black;
 }
 
 .scan-status.stopped {
-    background-color: var(--secondary-color);
+    background-color: rgba(108, 117, 125, 0.8);
 }
 
 .scan-status.error {
-    background-color: var(--danger-color);
+    background-color: rgba(220, 53, 69, 0.8);
 }
 
 /* 重複通知表示 */
@@ -181,6 +296,7 @@ main {
     transition: all 0.3s ease;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     border: 2px solid rgba(0, 0, 0, 0.1);
+    animation: bounceIn 0.5s ease-out;
 }
 
 .duplicate-notification.show {
@@ -196,14 +312,30 @@ main {
 }
 
 .duplicate-icon {
-    font-size:
-    1.5rem;
+    font-size: 1.5rem;
     margin-right: 8px;
 }
 
 .duplicate-text {
     font-weight: bold;
     word-break: break-all;
+}
+
+@keyframes bounceIn {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.3);
+    }
+    50% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1.05);
+    }
+    70% {
+        transform: translate(-50%, -50%) scale(0.9);
+    }
+    100% {
+        transform: translate(-50%, -50%) scale(1);
+    }
 }
 
 .scanner-controls {
@@ -426,208 +558,6 @@ button {
 .batch-actions {
     display: flex;
     gap: 0.5rem;
-}
-
-/* スキャン領域と関連ガイドラインのスタイル */
-.scan-region-highlight {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 200px;
-    height: 200px;
-    transform: translate(-50%, -50%);
-    border: 2px solid rgba(0, 123, 255, 0.7);
-    border-radius: 10px;
-    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.6);
-    z-index: 4;
-    transition: all 0.3s ease;
-}
-
-.scan-region-highlight.success {
-    border-color: rgba(40, 167, 69, 0.9);
-    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.6), 0 0 10px 2px rgba(40, 167, 69, 0.9);
-}
-
-/* スキャンガイドライン */
-.scan-guidelines {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 200px;
-    height: 200px;
-    transform: translate(-50%, -50%);
-    z-index: 5;
-    pointer-events: none;
-}
-
-/* 四隅のコーナーガイド */
-.scan-corner {
-    position: absolute;
-    width: 20px;
-    height: 20px;
-    border: 3px solid rgba(0, 123, 255, 0.9);
-}
-
-.scan-corner.top-left {
-    top: -2px;
-    left: -2px;
-    border-right: none;
-    border-bottom: none;
-    border-top-left-radius: 8px;
-}
-
-.scan-corner.top-right {
-    top: -2px;
-    right: -2px;
-    border-left: none;
-    border-bottom: none;
-    border-top-right-radius: 8px;
-}
-
-.scan-corner.bottom-left {
-    bottom: -2px;
-    left: -2px;
-    border-right: none;
-    border-top: none;
-    border-bottom-left-radius: 8px;
-}
-
-.scan-corner.bottom-right {
-    bottom: -2px;
-    right: -2px;
-    border-left: none;
-    border-top: none;
-    border-bottom-right-radius: 8px;
-}
-
-/* 中央の十字線 */
-.scan-centerline {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 190px;
-    height: 190px;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-}
-
-.scan-centerline::before,
-.scan-centerline::after {
-    content: '';
-    position: absolute;
-    background-color: rgba(255, 255, 255, 0.4);
-}
-
-.scan-centerline::before {
-    top: 50%;
-    left: 0;
-    width: 100%;
-    height: 1px;
-    transform: translateY(-50%);
-}
-
-.scan-centerline::after {
-    top: 0;
-    left: 50%;
-    width: 1px;
-    height: 100%;
-    transform: translateX(-50%);
-}
-
-/* スキャンライン */
-.scan-line {
-    position: absolute;
-    top: 0;
-    left: 50%;
-    width: 190px;
-    height: 2px;
-    background-color: rgba(0, 123, 255, 0.7);
-    transform: translateX(-50%);
-    box-shadow: 0 0 5px rgba(0, 123, 255, 0.7);
-    display: none;
-}
-
-.scan-line.animated {
-    display: block;
-    animation: scanLine 2s ease-in-out infinite;
-}
-
-@keyframes scanLine {
-    0% {
-        top: 5px;
-    }
-    50% {
-        top: calc(100% - 5px);
-    }
-    100% {
-        top: 5px;
-    }
-}
-
-/* スキャン状態表示のスタイル追加 */
-.scan-status {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 20px;
-    font-size: 0.9rem;
-    font-weight: bold;
-    z-index: 6;
-    transition: all 0.3s ease;
-    text-align: center;
-    max-width: 80%;
-}
-
-.scan-status.scanning {
-    background-color: rgba(0, 123, 255, 0.8);
-}
-
-.scan-status.success {
-    background-color: rgba(40, 167, 69, 0.8);
-}
-
-.scan-status.duplicate {
-    background-color: rgba(255, 193, 7, 0.8);
-    color: black;
-}
-
-.scan-status.processing {
-    background-color: rgba(255, 193, 7, 0.8);
-    color: black;
-}
-
-.scan-status.stopped {
-    background-color: rgba(108, 117, 125, 0.8);
-}
-
-.scan-status.error {
-    background-color: rgba(220, 53, 69, 0.8);
-}
-
-/* 重複通知表示のアニメーションを強化 */
-.duplicate-notification {
-    animation: bounceIn 0.5s ease-out;
-}
-
-@keyframes bounceIn {
-    0% {
-        opacity: 0;
-        transform: translate(-50%, -50%) scale(0.3);
-    }
-    50% {
-        opacity: 1;
-        transform: translate(-50%, -50%) scale(1.05);
-    }
-    70% {
-        transform: translate(-50%, -50%) scale(0.9);
-    }
-    100% {
-        transform: translate(-50%, -50%) scale(1);
-    }
 }
 
 /* ユーティリティ */
