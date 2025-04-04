@@ -25,7 +25,7 @@ const App = {
             duplicateNotification: document.getElementById('duplicate-notification'),
             navButtons: {
                 scan: document.getElementById('nav-scan'),
-                multiScan: document.getElementById('nav-multi-scan'), // 追加
+                multiScan: document.getElementById('nav-multi-scan'),
                 history: document.getElementById('nav-history'),
                 settings: document.getElementById('nav-settings')
             }
@@ -48,6 +48,23 @@ const App = {
 
         // 履歴を表示
         this.displayHistory();
+    },
+
+    // App.jsに追加するメソッド
+    // 複数スキャナーの初期化
+    initMultiScanner() {
+        try {
+            // MultiQRScannerが定義されていれば初期化
+            if (typeof MultiQRScanner !== 'undefined') {
+                MultiQRScanner.init();
+                console.log('複数QRコードスキャナーを初期化しました');
+            } else {
+                console.warn('MultiQRScannerが定義されていません');
+            }
+        } catch (error) {
+            console.error('複数QRコードスキャナーの初期化でエラーが発生:', error);
+            // エラーが発生しても、アプリの残りの部分は動作を継続
+        }
     },
 
     // 複数スキャナーの初期化
@@ -384,70 +401,73 @@ const App = {
     },
 
 
-// ナビゲーション処理の修正
-handleNavigation(target) {
-    // アクティブなナビゲーションボタンの更新
-    Object.keys(this.elements.navButtons).forEach(key => {
-        this.elements.navButtons[key].classList.remove('active');
-    });
-    this.elements.navButtons[target].classList.add('active');
-    
-    // すべてのビューコンテナを非表示
-    document.querySelectorAll('.view-container').forEach(container => {
-        container.style.display = 'none';
-    });
-    
-    // 対象のビューを表示
-    switch (target) {
-        case 'scan':
-            // 通常のスキャンビュー
-            document.getElementById('scanner-container').style.display = 'block';
-            // 他のスキャナーを停止
-            if (typeof MultiQRScanner !== 'undefined') {
-                MultiQRScanner.stopCamera();
+    // ナビゲーション処理の修正版 (既存のhandleNavigation メソッドを置き換え)
+    handleNavigation(target) {
+        // アクティブなナビゲーションボタンの更新
+        Object.keys(this.elements.navButtons).forEach(key => {
+            if (this.elements.navButtons[key]) {
+                this.elements.navButtons[key].classList.remove('active');
             }
-            break;
-            
-        case 'multiScan':
-            // 複数スキャンビュー
-            document.getElementById('multi-qr-container').style.display = 'block';
-            
-            // 通常スキャナーを停止
-            QRScanner.stop();
-            
-            // キャプチャUIをアクティブに
-            if (typeof MultiQRScanner !== 'undefined') {
-                document.getElementById('capture-ui').classList.add('active');
-                document.getElementById('results-ui').classList.remove('active');
-                MultiQRScanner.showCaptureUI();
-            }
-            break;
-            
-        case 'history':
-            // 履歴ビュー
-            document.getElementById('history-container').style.display = 'block';
-            // スキャナーを停止
-            QRScanner.stop();
-            if (typeof MultiQRScanner !== 'undefined') {
-                MultiQRScanner.stopCamera();
-            }
-            break;
-            
-        case 'settings':
-            // 設定ビュー
-            // 将来の実装
-            alert('この機能は開発中です');
-            // デフォルトビューに戻す
-            this.elements.navButtons.scan.classList.add('active');
-            document.getElementById('scanner-container').style.display = 'block';
-            break;
-            
-        default:
-            // デフォルトはスキャンビュー
-            document.getElementById('scanner-container').style.display = 'block';
-            break;
-    }
-},
+        });
+        
+        if (this.elements.navButtons[target]) {
+            this.elements.navButtons[target].classList.add('active');
+        }
+        
+        // すべてのビューコンテナを非表示
+        const viewContainers = document.querySelectorAll('.view-container');
+        viewContainers.forEach(container => {
+            container.style.display = 'none';
+        });
+        
+        // 対象のビューを表示
+        switch (target) {
+            case 'scan':
+                // 通常のスキャンビュー
+                document.getElementById('scanner-container').style.display = 'block';
+                // 他のスキャナーを停止
+                if (typeof MultiQRScanner !== 'undefined') {
+                    MultiQRScanner.stopScanning();
+                }
+                break;
+                
+            case 'multiScan':
+                // 複数スキャンビュー
+                document.getElementById('multi-scan-container').style.display = 'block';
+                
+                // 通常スキャナーを停止
+                if (typeof QRScanner !== 'undefined') {
+                    QRScanner.stop();
+                }
+                break;
+                
+            case 'history':
+                // 履歴ビュー
+                document.getElementById('history-container').style.display = 'block';
+                // スキャナーを停止
+                if (typeof QRScanner !== 'undefined') {
+                    QRScanner.stop();
+                }
+                if (typeof MultiQRScanner !== 'undefined') {
+                    MultiQRScanner.stopScanning();
+                }
+                break;
+                
+            case 'settings':
+                alert('この機能は開発中です');
+                // デフォルトビューに戻す
+                if (this.elements.navButtons.scan) {
+                    this.elements.navButtons.scan.classList.add('active');
+                }
+                document.getElementById('scanner-container').style.display = 'block';
+                break;
+                
+            default:
+                // デフォルトはスキャンビュー
+                document.getElementById('scanner-container').style.display = 'block';
+                break;
+        }
+    },
 
     // トースト通知の表示
     showToast(message) {

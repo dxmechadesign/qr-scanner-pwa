@@ -66,35 +66,37 @@
             </div>
         </div>
         
-        <!-- ビューコンテナ: 複数QRコードスキャン -->
+        <!-- ビューコンテナ: 複数QRコードスキャン（ビデオスキャン版） -->
         <div id="multi-qr-container" class="view-container multi-qr-container" style="display: none;">
-            <div id="capture-ui" class="capture-ui">
+            <div class="video-scanner">
                 <div class="camera-container">
                     <video id="multi-qr-video" playsinline></video>
-                    <div class="capture-overlay">
-                        <div class="capture-frame"></div>
-                        <div class="capture-instruction">複数のQRコードを枠内に収めてください</div>
+                    <div class="scan-overlay">
+                        <div class="scan-frame"></div>
+                        <div class="scan-instruction">複数のQRコードを検出します</div>
                     </div>
                 </div>
-                <div class="capture-controls">
-                    <button id="capture-button" class="primary-button large-button">撮影</button>
+                
+                <div class="scan-controls">
+                    <button id="start-multi-scan" class="primary-button">スキャン開始</button>
+                    <button id="stop-multi-scan" class="secondary-button" disabled>停止</button>
                 </div>
-            </div>
-
-            <div id="results-ui" class="results-ui">
-                <div class="results-header">
-                    <h3>検出結果</h3>
-                    <span id="detection-status" class="detection-status">検出中...</span>
-                </div>
-                <div class="image-preview-container">
-                    <img id="captured-image" class="captured-image" alt="撮影画像" />
-                </div>
-                <div id="detected-codes-list" class="detected-codes-list">
-                    <!-- ここにQRコード結果が表示されます -->
-                </div>
-                <div class="results-actions">
-                    <button id="rescan-button" class="secondary-button">再撮影</button>
-                    <button id="save-results-button" class="primary-button">全て保存</button>
+                
+                <div class="results-section">
+                    <div class="results-header">
+                        <h3>検出結果</h3>
+                        <span id="detection-status" class="detection-status">待機中...</span>
+                    </div>
+                    
+                    <div id="detected-codes-list" class="detected-codes-list">
+                        <!-- ここにQRコード結果が表示されます -->
+                        <p class="empty-message">QRコードが検出されていません</p>
+                    </div>
+                    
+                    <div class="results-actions">
+                        <button id="clear-multi-results" class="secondary-button">クリア</button>
+                        <button id="save-multi-results" class="primary-button">全て保存</button>
+                    </div>
                 </div>
             </div>
         </div>

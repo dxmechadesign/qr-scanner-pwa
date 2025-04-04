@@ -1,53 +1,38 @@
-// 複数QRコード検出スキャナー (ZXing実装)
+// 複数QRコード検出スキャナー (ZXing実装) - 重複追加なし版
 const MultiQRScanner = {
     // 状態管理
-    capturedImage: null,     // 撮影した画像
-    detectedCodes: [],       // 検出したQRコード
-    reader: null,            // ZXingリーダーインスタンス
-    processing: false,       // 処理中フラグ
+    isScanning: false,
+    videoElement: null,
+    canvasElement: null,
+    canvasContext: null,
+    videoStream: null,
+    scanInterval: null,
+    detectedCodes: [],    // 検出済みQRコード
+    lastDetection: 0,     // 最後の検出時刻
     
     // 初期化
-    async init() {
+    init() {
         console.log('MultiQRScanner: 初期化開始');
         
         // 要素の参照
         this.videoElement = document.getElementById('multi-qr-video');
         this.canvasElement = document.createElement('canvas');
         this.canvasContext = this.canvasElement.getContext('2d');
-        this.captureButton = document.getElementById('capture-button');
         this.resultsList = document.getElementById('detected-codes-list');
         this.statusElement = document.getElementById('detection-status');
         
         // ZXingの利用可能性をチェック
         if (typeof window.ZXing === 'undefined') {
             console.error('ZXingライブラリが利用できません');
-            console.log('window.ZXing:', window.ZXing);
-            console.log('window keys:', Object.keys(window).filter(k => k.includes('ZXing')));
-            
-            // エラーを表示するが、アプリは継続させる
-            if (typeof App !== 'undefined' && App.showToast) {
-                App.showToast('複数QRコード機能は利用できません');
-            } else {
-                alert('複数QRコード機能は利用できません');
-            }
             return;
         }
-
+        
         try {
             console.log('ZXingリーダーを初期化中...');
             
             // ヒントマップの設定
             const hints = new Map();
-            
-            // グローバルオブジェクトから直接アクセス
             const ZXing = window.ZXing;
-            
-            if (!ZXing.DecodeHintType) {
-                console.error('DecodeHintType が見つかりません');
-                console.log('ZXing object:', ZXing);
-                throw new Error('ZXingの必要なプロパティが見つかりません');
-            }
-            
             hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
             hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
             
@@ -61,64 +46,92 @@ const MultiQRScanner = {
             console.log('MultiQRScanner: 初期化完了');
         } catch (error) {
             console.error('ZXingリーダーの初期化エラー:', error);
-            alert('QRコード検出機能の初期化に失敗しました: ' + error.message);
+            if (typeof App !== 'undefined' && App.showToast) {
+                App.showToast('QRコード検出機能の初期化に失敗しました');
+            }
         }
     },
     
     // イベントリスナーのセットアップ
     setupEventListeners() {
-        console.log('MultiQRScanner: イベントリスナーをセットアップ中...')
+        // 開始/停止ボタン
+        const startScanBtn = document.getElementById('start-multi-scan');
+        const stopScanBtn = document.getElementById('stop-multi-scan');
+        const saveResultsBtn = document.getElementById('save-multi-results');
+        const clearResultsBtn = document.getElementById('clear-multi-results');
         
-        // 撮影ボタン - すでに設定済みのリスナーを削除
-        this.captureButton.removeEventListener('click', this._captureHandler);
-        
-        // ハンドラー関数を定義
-        this._captureHandler = () => {
-            console.log('撮影ボタンがクリックされました');
-            this.captureImage();
-        };
-        
-        // リスナーを追加
-        this.captureButton.addEventListener('click', this._captureHandler);
-        console.log('撮影ボタンのリスナーを設定しました');
-        
-        // 再撮影ボタン
-        const rescanButton = document.getElementById('rescan-button');
-        if (rescanButton) {
-            rescanButton.removeEventListener('click', this._rescanHandler);
-            this._rescanHandler = () => this.showCaptureUI();
-            rescanButton.addEventListener('click', this._rescanHandler);
+        if (startScanBtn) {
+            startScanBtn.addEventListener('click', () => this.startScanning());
         }
         
-        // 保存ボタン
-        const saveButton = document.getElementById('save-results-button');
-        if (saveButton) {
-            saveButton.removeEventListener('click', this._saveHandler);
-            this._saveHandler = () => this.saveDetectedCodes();
-            saveButton.addEventListener('click', this._saveHandler);
+        if (stopScanBtn) {
+            stopScanBtn.addEventListener('click', () => this.stopScanning());
+        }
+        
+        if (saveResultsBtn) {
+            saveResultsBtn.addEventListener('click', () => this.saveDetectedCodes());
+        }
+        
+        if (clearResultsBtn) {
+            clearResultsBtn.addEventListener('click', () => this.clearResults());
         }
     },
     
-    // カメラUIを表示
-    async showCaptureUI() {
-        document.getElementById('capture-ui').classList.add('active');
-        document.getElementById('results-ui').classList.remove('active');
-        this.captureButton.textContent = '撮影';
+    // スキャン開始
+    async startScanning() {
+        if (this.isScanning) return;
         
         try {
+            // スキャン準備中表示
+            this.updateStatus('カメラ準備中...', 'processing');
+            
+            // カメラの起動
             await this.startCamera();
+            
+            // スキャン開始
+            this.isScanning = true;
+            
+            // ボタン状態の更新
+            this.updateButtonState(true);
+            
+            // スキャン処理の開始
+            this.scanInterval = setInterval(() => this.scanVideoFrame(), 300);
+            
+            // スキャン中表示
+            this.updateStatus('スキャン中...', 'scanning');
+            
         } catch (error) {
-            this.showError('カメラへのアクセスに失敗しました');
+            console.error('スキャン開始エラー:', error);
+            this.updateStatus('カメラ起動エラー', 'error');
+            this.isScanning = false;
         }
     },
     
-    // 結果UIを表示
-    showResultsUI() {
-        document.getElementById('capture-ui').classList.remove('active');
-        document.getElementById('results-ui').classList.add('active');
+    // スキャン停止
+    stopScanning() {
+        if (!this.isScanning) return;
         
-        // カメラを停止
+        // インターバル停止
+        if (this.scanInterval) {
+            clearInterval(this.scanInterval);
+            this.scanInterval = null;
+        }
+        
+        // カメラ停止
         this.stopCamera();
+        
+        // 状態更新
+        this.isScanning = false;
+        this.updateStatus('スキャン停止', 'stopped');
+        this.updateButtonState(false);
+    },
+    
+    // 結果のクリア
+    clearResults() {
+        this.detectedCodes = [];
+        this.updateResultsUI();
+        this.updateStatus(this.isScanning ? 'スキャン中...' : '待機中...', 
+            this.isScanning ? 'scanning' : 'stopped');
     },
     
     // カメラ起動
@@ -127,35 +140,25 @@ const MultiQRScanner = {
             const constraints = { 
                 video: { 
                     facingMode: 'environment',
-                    // 解像度をより適切な値に調整
-                    width: { ideal: 1280 }, // 元は1920
-                    height: { ideal: 720 }  // 元は1080
-                    // ズーム制限を追加
-                    // advanced: [{ zoom: 1.0 }] // 一部のブラウザでサポート
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
                 } 
             };
             
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            this.videoElement.srcObject = stream;
+            this.videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+            this.videoElement.srcObject = this.videoStream;
             
-            // ズーム設定のリセットを試みる（サポートされている場合）
-            const videoTrack = stream.getVideoTracks()[0];
-            if (videoTrack && typeof videoTrack.getCapabilities === 'function') {
-                const capabilities = videoTrack.getCapabilities();
-                if (capabilities.zoom) {
-                    const settings = { zoom: 1.0 }; // 最小ズーム
-                    try {
-                        await videoTrack.applyConstraints({ advanced: [settings] });
-                    } catch (e) {
-                        console.log('ズーム設定の適用に失敗:', e);
-                    }
-                }
-            }
-
+            // ビデオ再生開始
             return new Promise((resolve) => {
                 this.videoElement.onloadedmetadata = () => {
                     this.videoElement.play()
-                        .then(resolve)
+                        .then(() => {
+                            // キャンバスサイズの設定
+                            this.canvasElement.width = this.videoElement.videoWidth;
+                            this.canvasElement.height = this.videoElement.videoHeight;
+                            console.log(`ビデオサイズ: ${this.canvasElement.width}x${this.canvasElement.height}`);
+                            resolve();
+                        })
                         .catch(error => {
                             console.error("ビデオ再生エラー:", error);
                             resolve(); // エラーでも続行
@@ -170,148 +173,96 @@ const MultiQRScanner = {
     
     // カメラ停止
     stopCamera() {
-        if (this.videoElement.srcObject) {
-            this.videoElement.srcObject.getTracks().forEach(track => track.stop());
+        if (this.videoStream) {
+            this.videoStream.getTracks().forEach(track => track.stop());
             this.videoElement.srcObject = null;
+            this.videoStream = null;
         }
     },
     
-    // 画像キャプチャ
-    captureImage() {
-        if (this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
-            this.showError('カメラの準備ができていません');
+    // ビデオフレームをスキャン
+    async scanVideoFrame() {
+        if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
             return;
         }
         
-        this.processing = true;
-
         try {
-            // キャンバスサイズをビデオの実際のサイズに合わせる
-            const videoWidth = this.videoElement.videoWidth;
-            const videoHeight = this.videoElement.videoHeight;
+            // 現在時刻を取得
+            const now = Date.now();
             
-            console.log(`ビデオサイズ: ${videoWidth}x${videoHeight}`);
-            
-            if (videoWidth === 0 || videoHeight === 0) {
-              this.showError('ビデオサイズが取得できません');
-              this.processing = false;
-              return;
+            // 前回の検出から1秒以内なら処理をスキップ（頻度制限）
+            if (now - this.lastDetection < 1000) {
+                return;
             }
-            
-            this.canvasElement.width = videoWidth;
-            this.canvasElement.height = videoHeight;
             
             // ビデオフレームをキャンバスに描画
             this.canvasContext.drawImage(
-              this.videoElement, 
-              0, 0, 
-              videoWidth, videoHeight
+                this.videoElement, 
+                0, 0, 
+                this.canvasElement.width, 
+                this.canvasElement.height
             );
             
-            // 画質を調整 (0.8は画質と容量のバランス)
-            this.capturedImage = this.canvasElement.toDataURL('image/jpeg', 0.8);
+            // キャンバスデータをImageBitmapに変換
+            const imageBitmap = await createImageBitmap(this.canvasElement);
             
-            // デバッグ用に画像サイズを表示
-            const img = new Image();
-            img.src = this.capturedImage;
-            img.onload = () => {
-              console.log(`キャプチャした画像のサイズ: ${img.width}x${img.height}`);
-            };
-            
-            // プレビュー表示
-            document.getElementById('captured-image').src = this.capturedImage;
-            
-            // 結果UIに切り替え
-            this.showResultsUI();
-            
-            // QRコード検出処理
-            this.detectQRCodes();
-          } catch (error) {
-            console.error('画像キャプチャエラー:', error);
-            this.showError('画像の撮影に失敗しました');
-            this.processing = false;
-          }
-    },
-    
-    // detectQRCodes メソッド内の処理を改善
-    async detectQRCodes() {
-        if (!this.reader || !this.capturedImage) {
-        this.processing = false;
-        return;
-        }
-        
-        try {
-        // 処理中表示
-        this.statusElement.textContent = 'QRコード検出中...';
-        this.statusElement.className = 'detection-status processing';
-        
-        // 画像要素の作成
-        const img = new Image();
-        img.src = this.capturedImage;
-        
-        await new Promise(resolve => {
-            img.onload = resolve;
-        });
-        
-        console.log('画像サイズ:', img.width, img.height);
-        
-        // 画像が正しく読み込まれているか確認
-        if (img.width === 0 || img.height === 0) {
-            throw new Error('画像が正しく読み込まれていません');
-        }
-        
-        console.log('QRコード検出開始...');
-        
-        try {
-            // ZXingで検出を試みる
-            const results = await this.reader.decodeMultiple(img);
-            console.log('検出結果:', results);
-            
-            // 結果を処理
-            if (results && results.length > 0) {
-            this.detectedCodes = results.map(result => ({
-                id: Date.now() + Math.random().toString(36).substring(2, 9),
-                data: result.getText(),
-                format: result.getBarcodeFormat().toString(),
-                timestamp: new Date().toISOString()
-            }));
-            
-            console.log(`${this.detectedCodes.length}個のQRコードを検出`);
-            } else {
-            console.log('QRコードが検出されませんでした');
-            this.detectedCodes = [];
+            // ZXingでQRコード検出を試行
+            try {
+                const results = await this.reader.decodeMultiple(imageBitmap);
+                
+                // 新しいコードが検出された場合
+                if (results && results.length > 0) {
+                    let newCodesAdded = 0;
+                    
+                    // 検出されたコードを処理
+                    results.forEach(result => {
+                        const codeData = result.getText();
+                        
+                        // 重複チェック - 既に同じデータのコードがあれば追加しない
+                        const isDuplicate = this.detectedCodes.some(item => item.data === codeData);
+                        
+                        if (!isDuplicate) {
+                            // 新しいコードのみを追加
+                            this.detectedCodes.push({
+                                id: Date.now() + Math.random().toString(36).substring(2, 9),
+                                data: codeData,
+                                format: result.getBarcodeFormat().toString(),
+                                timestamp: new Date().toISOString()
+                            });
+                            
+                            newCodesAdded++;
+                            
+                            // ビープ音を鳴らす
+                            this.playBeepSound();
+                        }
+                    });
+                    
+                    // 新しいコードが追加された場合のみ更新
+                    if (newCodesAdded > 0) {
+                        this.lastDetection = now; // 検出時刻を更新
+                        
+                        // UI更新
+                        this.updateResultsUI();
+                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
+                    }
+                }
+            } catch (decodeError) {
+                // デコードエラーは無視（フレームごとに起こりうる）
             }
-        } catch (decodeError) {
-            console.error('QRコード検出エラー (ZXing):', decodeError);
-            this.detectedCodes = [];
-        }
-        
-        // UI更新
-        this.updateResultsUI();
-        
-        // 処理完了表示
-        this.statusElement.textContent = 
-            `${this.detectedCodes.length}個のQRコードを検出しました`;
-        this.statusElement.className = this.detectedCodes.length > 0 ? 
-            'detection-status success' : 'detection-status error';
-        
+            
         } catch (error) {
-        console.error('QRコード検出処理エラー:', error);
-        this.statusElement.textContent = 'QRコードが見つかりませんでした';
-        this.statusElement.className = 'detection-status error';
-        this.detectedCodes = [];
-        this.updateResultsUI();
-        } finally {
-        this.processing = false;
+            console.error('スキャン処理エラー:', error);
         }
     },
     
-    // 結果UI更新
+    // UI表示を更新
     updateResultsUI() {
+        if (!this.resultsList) return;
+        
         this.resultsList.innerHTML = '';
         
         if (this.detectedCodes.length === 0) {
-            this.resultsList.innerHTML = '<p class="empty-message">QRコードが検出されませんでした</p>';
+            this.resultsList.innerHTML = '<p class="empty-message">QRコードが検出されていません</p>';
             return;
         }
         
@@ -319,7 +270,7 @@ const MultiQRScanner = {
             const item = document.createElement('div');
             item.className = 'qr-result-item';
             
-            // 日時の整形
+            // 時刻フォーマット
             const date = new Date(code.timestamp);
             const formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
             
@@ -331,65 +282,106 @@ const MultiQRScanner = {
                 <div class="qr-result-data">${code.data}</div>
                 <div class="qr-result-meta">
                     <span class="qr-result-time">${formattedTime}</span>
-                    <span class="qr-result-format">${code.format}</span>
                 </div>
             `;
             
             this.resultsList.appendChild(item);
         });
         
-        // 削除ボタンのイベントリスナー
-        document.querySelectorAll('.qr-result-remove').forEach(button => {
+        // 削除ボタンのイベント設定
+        const removeButtons = this.resultsList.querySelectorAll('.qr-result-remove');
+        removeButtons.forEach(button => {
             button.addEventListener('click', (e) => {
                 const id = e.target.getAttribute('data-id');
                 this.detectedCodes = this.detectedCodes.filter(code => code.id !== id);
                 this.updateResultsUI();
-                
-                this.statusElement.textContent = 
-                    `${this.detectedCodes.length}個のQRコードを検出しました`;
+                this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 
+                    this.detectedCodes.length > 0 ? 'success' : 'stopped');
             });
         });
+    },
+    
+    // 状態表示の更新
+    updateStatus(message, statusClass) {
+        if (this.statusElement) {
+            this.statusElement.textContent = message;
+            this.statusElement.className = 'detection-status';
+            if (statusClass) {
+                this.statusElement.classList.add(statusClass);
+            }
+        }
+    },
+    
+    // ボタン状態の更新
+    updateButtonState(isScanning) {
+        const startBtn = document.getElementById('start-multi-scan');
+        const stopBtn = document.getElementById('stop-multi-scan');
+        
+        if (startBtn) startBtn.disabled = isScanning;
+        if (stopBtn) stopBtn.disabled = !isScanning;
     },
     
     // 検出結果の保存
     saveDetectedCodes() {
         if (this.detectedCodes.length === 0) {
-            this.showToast('保存するQRコードがありません');
+            if (typeof App !== 'undefined' && App.showToast) {
+                App.showToast('保存するQRコードがありません');
+            }
             return;
         }
         
-        // ここでApp.jsのsaveScannedData関数を利用
-        this.detectedCodes.forEach(code => {
-            App.saveScannedData(code.data);
-        });
+        // App.jsのsaveScannedData関数を利用して保存
+        if (typeof App !== 'undefined') {
+            this.detectedCodes.forEach(code => {
+                App.saveScannedData(code.data);
+            });
+            
+            App.showToast(`${this.detectedCodes.length}個のQRコードを保存しました`);
+            App.displayHistory(); // 履歴表示を更新
+        }
         
-        this.showToast(`${this.detectedCodes.length}個のQRコードを保存しました`);
-        
-        // 履歴を更新
-        App.displayHistory();
-        
-        // 初期状態に戻す
+        // 検出リストをクリア
         this.detectedCodes = [];
-        this.capturedImage = null;
-        this.showCaptureUI();
+        this.updateResultsUI();
+        this.updateStatus('スキャン中...', 'scanning');
     },
     
-    // トースト通知表示
-    showToast(message) {
-        // App.jsのshowToast関数を利用
-        App.showToast(message);
+    // ビープ音の再生
+    playBeepSound() {
+        try {
+            // Web Audio APIを使用
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.type = 'square';
+            oscillator.frequency.value = 800;
+            gainNode.gain.value = 0.3;
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.start(0);
+            
+            // 短いビープ音
+            setTimeout(() => {
+                oscillator.stop();
+            }, 150);
+            
+        } catch (error) {
+            console.error("ビープ音の再生に失敗:", error);
+        }
     },
     
-    // エラー表示
-    showError(message) {
-        console.error(message);
-        this.showToast(message);
+    // ビュー表示
+    showMultiScanView() {
+        // キャプチャUIをアクティブに
+        document.getElementById('multi-scan-container').style.display = 'block';
+        
+        // 他のビューを非表示
+        const otherViews = document.querySelectorAll('.view-container:not(#multi-scan-container)');
+        otherViews.forEach(view => {
+            view.style.display = 'none';
+        });
     }
 };
-
-// DOMコンテンツ読み込み完了時に初期化
-document.addEventListener('DOMContentLoaded', () => {
-    // MultiQRScannerの初期化は、App.initの中から呼び出す想定
-    // または、直接呼び出す場合は:
-    // MultiQRScanner.init();
-});
