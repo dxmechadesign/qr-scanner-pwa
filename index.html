@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#007bff">
+    <title>QRコードスキャナー</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="images/icons/icon-192x192.png">
+    <!-- PWA用アイコン -->
+    <link rel="icon" type="image/png" href="images/icons/favicon.png">
+</head>
+<body>
+    <header>
+        <h1>QRコードスキャナー</h1>
+        <div class="status-indicator">
+            <span id="connection-status" class="online">オンライン</span>
+        </div>
+    </header>
+
+    <main>
+        <div class="scanner-container">
+            <div class="viewfinder">
+                <video id="qr-video" playsinline></video>
+                <div class="scan-region-highlight"></div>
+                <div class="scan-region-highlight-svg"></div>
+            </div>
+            
+            <div class="scanner-controls">
+                <button id="start-button" class="primary-button">スキャン開始</button>
+                <button id="stop-button" class="secondary-button" disabled>停止</button>
+                <select id="camera-select" class="camera-select">
+                    <option value="">カメラを選択</option>
+                </select>
+            </div>
+            
+            <div id="scan-result" class="result-container hidden">
+                <h3>スキャン結果</h3>
+                <div id="result-text"></div>
+                <div class="result-actions">
+                    <button id="copy-button" class="action-button">コピー</button>
+                    <button id="save-button" class="action-button primary">保存</button>
+                    <button id="scan-again-button" class="action-button">再スキャン</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="recent-scans">
+            <h3>最近のスキャン</h3>
+            <div id="history-list" class="history-list">
+                <p class="empty-message">履歴がありません</p>
+            </div>
+        </div>
+    </main>
+
+    <nav class="bottom-nav">
+        <button id="nav-scan" class="nav-button active">
+            <span class="icon">📷</span>
+            <span>スキャン</span>
+        </button>
+        <button id="nav-history" class="nav-button">
+            <span class="icon">📋</span>
+            <span>履歴</span>
+        </button>
+        <button id="nav-settings" class="nav-button">
+            <span class="icon">⚙️</span>
+            <span>設定</span>
+        </button>
+    </nav>
+
+    <!-- スクリプト -->
+    <script src="js/jsQR.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/qr-scanner.js"></script>
+    <script>
+        // Service Workerの登録
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(reg => console.log('Service Worker registered:', reg))
+                    .catch(err => console.log('Service Worker registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>
