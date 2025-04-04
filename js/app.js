@@ -44,9 +44,6 @@ const App = {
 
         // 履歴を表示
         this.displayHistory();
-
-        // 複数スキャナーの初期化
-        this.initMultiScanner();
     },
 
     // イベントリスナー設定
@@ -372,72 +369,24 @@ const App = {
         }
     },
 
-    // ナビゲーション処理を拡張 (handleNavigation メソッド内)
-    // 例: 
+    // ナビゲーション処理
     handleNavigation(target) {
         // アクティブなナビゲーションボタンの更新
         Object.keys(this.elements.navButtons).forEach(key => {
             this.elements.navButtons[key].classList.remove('active');
         });
+        this.elements.navButtons[target].classList.add('active');
         
-        if (this.elements.navButtons[target]) {
-            this.elements.navButtons[target].classList.add('active');
-        }
-        
-        // すべてのビューを非表示
-        document.querySelectorAll('.view-container').forEach(container => {
-            container.style.display = 'none';
-        });
-        
-        // 対象のビューを表示
-        switch (target) {
-            case 'scan':
-                // 通常のスキャンビュー
-                document.getElementById('scanner-container').style.display = 'block';
-                // 他のモードを停止
-                if (typeof MultiQRScanner !== 'undefined') {
-                    MultiQRScanner.stopCamera();
-                }
-                break;
-                
-            case 'multiScan':
-                // 複数スキャンビュー
-                document.getElementById('scanner-container').style.display = 'none';
-                document.getElementById('multi-qr-container').style.display = 'block';
-                
-                // スキャナーを停止
-                QRScanner.stop();
-                
-                // キャプチャUIを表示
-                if (typeof MultiQRScanner !== 'undefined') {
-                    MultiQRScanner.showCaptureUI();
-                }
-                break;
-                
-            case 'history':
-                // 履歴ビュー
-                document.getElementById('history-container').style.display = 'block';
-                // スキャナーを停止
-                QRScanner.stop();
-                if (typeof MultiQRScanner !== 'undefined') {
-                    MultiQRScanner.stopCamera();
-                }
-                break;
-                
-            case 'settings':
-                // 設定ビュー
-                document.getElementById('settings-container').style.display = 'block';
-                // スキャナーを停止
-                QRScanner.stop();
-                if (typeof MultiQRScanner !== 'undefined') {
-                    MultiQRScanner.stopCamera();
-                }
-                break;
-                
-            default:
-                // デフォルトはスキャンビュー
-                document.getElementById('scanner-container').style.display = 'block';
-                break;
+        // 現段階では単一ページのみ（フェーズ1）
+        // フェーズ4でマルチビュー対応予定
+        if (target === 'scan') {
+            // カメラビューを表示
+            this.elements.scannerContainer.style.display = 'block';
+        } else {
+            // 将来の実装のためのプレースホルダー
+            alert('この機能は開発中です');
+            // デフォルトビューに戻す
+            this.elements.navButtons.scan.classList.add('active');
         }
     },
 
@@ -474,65 +423,6 @@ const App = {
         if (!localStorage.getItem('scanHistory')) {
             localStorage.setItem('scanHistory', JSON.stringify([]));
         }
-    },
-
-    initMultiScanner() {
-        // ナビゲーションボタンの参照を追加
-        this.elements.navButtons.multiScan = document.getElementById('nav-multi-scan');
-        
-        // MultiQRScannerの初期化
-        if (typeof MultiQRScanner !== 'undefined') {
-            MultiQRScanner.init().catch(error => {
-                console.error('複数QRコードスキャナーの初期化に失敗:', error);
-            });
-        }
-        
-        // 複数スキャンモードの切り替えボタン
-        if (this.elements.navButtons.multiScan) {
-            this.elements.navButtons.multiScan.addEventListener('click', () => {
-                this.handleNavigation('multiScan');
-            });
-        }
-        
-        // 画像読み込みボタン (オプション)
-        const imageUploadButton = document.getElementById('image-upload-button');
-        if (imageUploadButton) {
-            imageUploadButton.addEventListener('click', this.handleImageUpload.bind(this));
-        }
-    },
-
-    // 画像ファイルの読み込み処理 (オプション)
-    handleImageUpload() {
-        // ファイル選択ダイアログの作成
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = 'image/*';
-        
-        fileInput.addEventListener('change', (event) => {
-            if (event.target.files && event.target.files[0]) {
-                const file = event.target.files[0];
-                
-                // 画像ファイルをURLに変換
-                const imageUrl = URL.createObjectURL(file);
-                
-                // MultiQRScannerとの連携処理
-                if (typeof MultiQRScanner !== 'undefined') {
-                    // 撮影画像を設定
-                    document.getElementById('captured-image').src = imageUrl;
-                    
-                    // 結果UIの表示
-                    document.getElementById('capture-ui').classList.remove('active');
-                    document.getElementById('results-ui').classList.add('active');
-                    
-                    // 画像からのQRコード検出処理
-                    MultiQRScanner.capturedImage = imageUrl;
-                    MultiQRScanner.detectQRCodes();
-                }
-            }
-        });
-        
-        // ファイル選択ダイアログを表示
-        fileInput.click();
     }
 };
 
