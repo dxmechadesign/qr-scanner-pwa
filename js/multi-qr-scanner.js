@@ -52,28 +52,51 @@ const MultiQRScanner = {
         }
     },
     
-    // イベントリスナーのセットアップ
+    // イベントリスナーのセットアップを確認
     setupEventListeners() {
-        // 開始/停止ボタン
+        console.log('イベントリスナーをセットアップ中...');
+        
+        // 開始/停止ボタンの参照を確認
         const startScanBtn = document.getElementById('start-multi-scan');
         const stopScanBtn = document.getElementById('stop-multi-scan');
         const saveResultsBtn = document.getElementById('save-multi-results');
         const clearResultsBtn = document.getElementById('clear-multi-results');
         
+        console.log('ボタン要素:', {
+            startScan: startScanBtn,
+            stopScan: stopScanBtn,
+            saveResults: saveResultsBtn,
+            clearResults: clearResultsBtn
+        });
+        
         if (startScanBtn) {
-            startScanBtn.addEventListener('click', () => this.startScanning());
+            startScanBtn.addEventListener('click', () => {
+                console.log('スキャン開始ボタンがクリックされました');
+                this.startScanning();
+            });
+        } else {
+            console.error('start-multi-scan ボタンが見つかりません');
         }
         
         if (stopScanBtn) {
-            stopScanBtn.addEventListener('click', () => this.stopScanning());
+            stopScanBtn.addEventListener('click', () => {
+                console.log('スキャン停止ボタンがクリックされました');
+                this.stopScanning();
+            });
         }
         
         if (saveResultsBtn) {
-            saveResultsBtn.addEventListener('click', () => this.saveDetectedCodes());
+            saveResultsBtn.addEventListener('click', () => {
+                console.log('保存ボタンがクリックされました');
+                this.saveDetectedCodes();
+            });
         }
         
         if (clearResultsBtn) {
-            clearResultsBtn.addEventListener('click', () => this.clearResults());
+            clearResultsBtn.addEventListener('click', () => {
+                console.log('クリアボタンがクリックされました');
+                this.clearResults();
+            });
         }
     },
     

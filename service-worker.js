@@ -1,24 +1,24 @@
 // キャッシュ名とバージョン
 const CACHE_NAME = 'qr-scanner-cache-v1';
 
-// キャッシュするアセット
+// service-worker.js 内のCACHE_ASSETSの変更
 const CACHE_ASSETS = [
   './',
   './index.html',
   './css/style.css',
-  './css/multi-qr.css',  // 追加: 複数QRコード読み取り用CSS
+  './css/multi-qr.css',
   './js/app.js',
   './js/qr-scanner.js',
+  './js/multi-qr-scanner.js',
   './js/jsQR.js',
-    // 追加: ZXingライブラリ (CDN版)
-  'https://unpkg.com/@zxing/library@latest',
-  './js/multi-qr-scanner.js',  // 追加: 複数QRコード読み取り用JS
+  'https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js',
   './manifest.json',
   './images/icons/favicon.png',
+  // これらのファイルが実際に存在するか確認
   './images/icons/icon-72x72.png',
   './images/icons/icon-96x96.png',
   './images/icons/icon-128x128.png',
-  './images/icons/icon-144x144.png',
+  // './images/icons/icon-144x144.png', // エラーが出ているファイルはコメントアウト
   './images/icons/icon-152x152.png',
   './images/icons/icon-192x192.png',
   './images/icons/icon-384x384.png',
