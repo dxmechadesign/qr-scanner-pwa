@@ -81,11 +81,16 @@ const MultiQRScanner = {
                         if (ZXing.DecodeHintType.TRY_HARDER) {
                             hintsMap.set(ZXing.DecodeHintType.TRY_HARDER, true);
                         }
+                        // 高速化のためのヒント追加
+                        if (ZXing.DecodeHintType.CHARACTER_SET) {
+                            hintsMap.set(ZXing.DecodeHintType.CHARACTER_SET, "UTF-8");
+                        }
                         this.reader = new ZXing.BrowserMultiFormatReader(hintsMap);
                     } else {
                         // 新しいバージョン
                         hints.formats = ['QR_CODE'];
                         hints.tryHarder = true;
+                        hints.characterSet = "UTF-8";
                         this.reader = new ZXing.BrowserMultiFormatReader(hints);
                     }
                 } else if (ZXing.MultiFormatReader) {
@@ -194,7 +199,7 @@ const MultiQRScanner = {
             
             // スキャン処理の開始
             console.log('スキャンインターバル設定...');
-            this.scanInterval = setInterval(() => this.scanVideoFrame(), 300);
+            this.scanInterval = setInterval(() => this.scanVideoFrame(), 150);
             
             // スキャン中表示
             this.updateStatus('スキャン中...', 'scanning');
@@ -240,8 +245,9 @@ const MultiQRScanner = {
             const constraints = { 
                 video: { 
                     facingMode: 'environment',
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                    width: { ideal: 1920 },  // より高解像度に変更
+                    height: { ideal: 1080 }, // より高解像度に変更
+                    frameRate: { ideal: 30, min: 15 } // フレームレートを指定
                 } 
             };
             
@@ -296,8 +302,8 @@ const MultiQRScanner = {
             // 現在時刻を取得
             const now = Date.now();
             
-            // 前回の検出から500ms以内なら処理をスキップ（頻度制限）
-            if (now - this.lastDetection < 500) {
+            // 前回の検出から300ms以内なら処理をスキップ（高速スキャン用に短縮）
+            if (now - this.lastDetection < 300) {
                 return;
             }
             
@@ -309,16 +315,66 @@ const MultiQRScanner = {
                 this.canvasElement.height
             );
             
-            // キャンバスからイメージデータを取得
-            const imageData = this.canvasContext.getImageData(
-                0, 0, 
-                this.canvasElement.width, 
-                this.canvasElement.height
-            );
+            let detected = false;
             
-            // jsQRライブラリを使用してQRコードを検出
-            if (typeof jsQR === 'function') {
+            // ZXingライブラリでの検出を試みる（高速）
+            if (this.reader && typeof this.reader.decodeFromImage === 'function') {
                 try {
+                    // データURLに変換
+                    const dataURL = this.canvasElement.toDataURL('image/jpeg', 0.8);
+                    
+                    // 画像要素を作成
+                    const img = document.createElement('img');
+                    img.src = dataURL;
+                    
+                    // 画像の読み込みを待つ
+                    await new Promise((resolve) => {
+                        img.onload = resolve;
+                    });
+                    
+                    // ZXingで検出
+                    const result = await this.reader.decodeFromImage(img);
+                    if (result) {
+                        const codeData = result.text || (typeof result.getText === 'function' ? result.getText() : String(result));
+                        console.log('ZXingで検出:', codeData);
+                        
+                        // 重複チェック
+                        const isDuplicate = this.detectedCodes.some(item => item.data === codeData);
+                        
+                        if (!isDuplicate) {
+                            this.detectedCodes.push({
+                                id: Date.now() + Math.random().toString(36).substring(2, 9),
+                                data: codeData,
+                                format: 'QR_CODE',
+                                timestamp: new Date().toISOString()
+                            });
+                            
+                            this.lastDetection = now;
+                            this.playBeepSound();
+                            this.updateResultsUI();
+                            this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
+                        } else {
+                            // 重複した場合も検出時刻を更新（連続検出の抑制のため）
+                            this.lastDetection = now;
+                        }
+                        detected = true;
+                    }
+                } catch (zxingError) {
+                    // ZXingでエラーが発生した場合はjsQRにフォールバック
+                    // console.warn('ZXingデコードエラー:', zxingError);
+                }
+            }
+            
+            // ZXingで検出できなかった場合はjsQRを使用
+            if (!detected && typeof jsQR === 'function') {
+                try {
+                    // キャンバスからイメージデータを取得
+                    const imageData = this.canvasContext.getImageData(
+                        0, 0, 
+                        this.canvasElement.width, 
+                        this.canvasElement.height
+                    );
+                    
                     const code = jsQR(
                         imageData.data,
                         imageData.width,
@@ -355,7 +411,6 @@ const MultiQRScanner = {
                     console.warn('jsQRデコードエラー:', jsQRError);
                 }
             }
-            
         } catch (error) {
             console.error('スキャン処理エラー:', error);
         }
