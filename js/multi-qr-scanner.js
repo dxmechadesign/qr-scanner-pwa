@@ -1,4 +1,4 @@
-// 複数QRコード検出スキャナー (ZXing実装) - 重複追加なし版
+// 複数QRコード検出スキャナー (ZXing実装) - 重複追加なし版 (v1.0.2)
 const MultiQRScanner = {
     // 状態管理
     isScanning: false,
@@ -404,10 +404,10 @@ const MultiQRScanner = {
     // ビュー表示
     showMultiScanView() {
         // キャプチャUIをアクティブに
-        document.getElementById('multi-scan-container').style.display = 'block';
+        document.getElementById('multi-qr-container').style.display = 'block';
         
         // 他のビューを非表示
-        const otherViews = document.querySelectorAll('.view-container:not(#multi-scan-container)');
+        const otherViews = document.querySelectorAll('.view-container:not(#multi-qr-container)');
         otherViews.forEach(view => {
             view.style.display = 'none';
         });

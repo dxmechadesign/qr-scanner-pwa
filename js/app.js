@@ -60,24 +60,35 @@ const App = {
     initMultiScanner() {
         return new Promise((resolve, reject) => {
             try {
+                console.log('initMultiScanner開始...');
                 // MultiQRScannerが定義されていれば初期化
                 if (typeof MultiQRScanner !== 'undefined') {
-                    MultiQRScanner.init()
-                        .then(() => {
+                    console.log('MultiQRScannerが定義されています。init実行前');
+                    
+                    // MultiQRScanner.initがPromiseを返すか確認
+                    const initResult = MultiQRScanner.init();
+                    console.log('initResult:', initResult);
+                    
+                    if (initResult && typeof initResult.then === 'function') {
+                        initResult.then(() => {
                             console.log('複数QRコードスキャナーを初期化しました');
                             resolve();
                         })
                         .catch(error => {
                             console.error('複数QRコードスキャナーの初期化に失敗:', error);
-                            reject(error);
+                            resolve(); // エラーでもアプリは続行する
                         });
+                    } else {
+                        console.warn('MultiQRScanner.initがPromiseを返しません');
+                        resolve(); // Promiseでなくてもアプリは続行する
+                    }
                 } else {
                     console.warn('MultiQRScannerが定義されていません');
-                    reject(new Error('MultiQRScannerが定義されていません'));
+                    resolve(); // 定義されていなくてもアプリは続行する
                 }
             } catch (error) {
                 console.error('initMultiScannerでエラーが発生:', error);
-                reject(error);
+                resolve(); // エラーでもアプリは続行する
             }
         });
     },
@@ -405,7 +416,7 @@ const App = {
         }
     },
 
-    // 修正版 - App.js内のhandleNavigationメソッド
+    // ナビゲーション処理
     handleNavigation(target) {
         // アクティブなナビゲーションボタンの更新
         Object.keys(this.elements.navButtons).forEach(key => {
@@ -436,6 +447,36 @@ const App = {
                 // 他のモードを停止
                 if (typeof MultiQRScanner !== 'undefined') {
                     MultiQRScanner.stopCamera();
+                }
+                break;
+                
+            case 'multiScan':
+                console.log('複数スキャンモードに切り替えます');
+                // 複数スキャンビュー
+                const multiScanContainer = document.getElementById('multi-qr-container');
+                console.log('multi-qr-container要素:', multiScanContainer);
+                
+                if (multiScanContainer) {
+                    multiScanContainer.style.display = 'block';
+                    console.log('複数スキャンビューを表示しました');
+                } else {
+                    console.error('multi-qr-container要素が見つかりません');
+                }
+                
+                // 通常スキャナーを停止
+                QRScanner.stop();
+                
+                // 複数スキャンモード開始
+                if (typeof MultiQRScanner !== 'undefined') {
+                    console.log('MultiQRScannerが定義されています');
+                    if (typeof MultiQRScanner.showMultiScanView === 'function') {
+                        console.log('showMultiScanViewメソッドを呼び出します');
+                        MultiQRScanner.showMultiScanView();
+                    } else {
+                        console.error('showMultiScanViewメソッドが定義されていません');
+                    }
+                } else {
+                    console.error('MultiQRScannerが定義されていません');
                 }
                 break;
                 
