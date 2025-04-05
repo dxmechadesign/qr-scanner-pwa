@@ -435,7 +435,7 @@ const App = {
                 
             case 'multiScan':
                 // 複数スキャンビュー
-                const multiContainer = document.getElementById('multi-scan-container');
+                const multiContainer = document.getElementById('multi-qr-container');
                 if (multiContainer) multiContainer.style.display = 'block';
                 
                 // 通常スキャナーを停止
