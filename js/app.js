@@ -41,7 +41,13 @@ const App = {
         QRScanner.init();
 
         // 複数スキャナー初期化
-        this.initMultiScanner(); // 追加
+        this.initMultiScanner()
+            .then(() => {
+                // 複数スキャナー初期化成功後の処理
+            })
+            .catch(error => {
+                console.error('複数スキャナーの初期化に失敗:', error);
+            });
 
         // デモ用のローカルストレージ初期化
         this.initLocalStorage();
@@ -53,34 +59,28 @@ const App = {
     // App.jsに追加するメソッド
     // 複数スキャナーの初期化
     initMultiScanner() {
-        try {
-            // MultiQRScannerが定義されていれば初期化
-            if (typeof MultiQRScanner !== 'undefined') {
-                MultiQRScanner.init();
-                console.log('複数QRコードスキャナーを初期化しました');
-            } else {
-                console.warn('MultiQRScannerが定義されていません');
+        return new Promise((resolve, reject) => {
+            try {
+                // MultiQRScannerが定義されていれば初期化
+                if (typeof MultiQRScanner !== 'undefined') {
+                    MultiQRScanner.init()
+                        .then(() => {
+                            console.log('複数QRコードスキャナーを初期化しました');
+                            resolve();
+                        })
+                        .catch(error => {
+                            console.error('複数QRコードスキャナーの初期化に失敗:', error);
+                            reject(error);
+                        });
+                } else {
+                    console.warn('MultiQRScannerが定義されていません');
+                    reject(new Error('MultiQRScannerが定義されていません'));
+                }
+            } catch (error) {
+                console.error('initMultiScannerでエラーが発生:', error);
+                reject(error);
             }
-        } catch (error) {
-            console.error('複数QRコードスキャナーの初期化でエラーが発生:', error);
-            // エラーが発生しても、アプリの残りの部分は動作を継続
-        }
-    },
-
-    // 修正版 - App.js内のinitMultiScannerメソッド
-    initMultiScanner() {
-        try {
-            // MultiQRScannerが定義されていれば初期化
-            if (typeof MultiQRScanner !== 'undefined') {
-                // Promise を返さない場合の対応
-                MultiQRScanner.init();
-                console.log('複数QRコードスキャナーを初期化しました');
-            } else {
-                console.warn('MultiQRScannerが定義されていません');
-            }
-        } catch (error) {
-            console.error('複数QRコードスキャナーの初期化でエラーが発生:', error);
-        }
+        });
     },
 
     // イベントリスナー設定
