@@ -293,7 +293,7 @@ const MultiQRScanner = {
         }
         
         try {
-            console.log('フレームスキャン中...');
+            //console.log('フレームスキャン中...');
             // 現在時刻を取得
             const now = Date.now();
             
@@ -316,44 +316,65 @@ const MultiQRScanner = {
                 this.canvasElement.width, 
                 this.canvasElement.height
             );
-            console.log('イメージデータ取得:', imageData.width, 'x', imageData.height);
+            //console.log('イメージデータ取得:', imageData.width, 'x', imageData.height);
             
-            // ZXingでQRコード検出を試行
+            // まずjsQRライブラリでの検出を試みる（より安定している）
+            if (typeof jsQR === 'function') {
+                try {
+                    const code = jsQR(
+                        imageData.data,
+                        imageData.width,
+                        imageData.height
+                    );
+                    
+                    if (code) {
+                        console.log('jsQRで検出:', code.data);
+                        
+                        // 重複チェック
+                        const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
+                        
+                        if (!isDuplicate) {
+                            this.detectedCodes.push({
+                                id: Date.now() + Math.random().toString(36).substring(2, 9),
+                                data: code.data,
+                                format: 'QR_CODE',
+                                timestamp: new Date().toISOString()
+                            });
+                            
+                            this.lastDetection = now;
+                            this.playBeepSound();
+                            this.updateResultsUI();
+                            this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
+                            return; // 検出成功したら処理終了
+                        }
+                    }
+                } catch (jsQRError) {
+                    console.warn('jsQRデコードエラー:', jsQRError);
+                }
+            }
+            
+            // jsQRで検出できなかった場合はZXingを試す
             try {
-                console.log('ZXingでQRコード検出試行...');
-                console.log('リーダーメソッド確認:', Object.getOwnPropertyNames(this.reader));
+                // キャンバスから一時的なイメージ要素を作成
+                const tempImage = document.createElement('img');
+                tempImage.width = this.canvasElement.width;
+                tempImage.height = this.canvasElement.height;
                 
-                // decodeFromImageのようなメソッドを試してみる
-                let result;
+                // データURLに変換
+                const dataURL = this.canvasElement.toDataURL('image/png');
+                tempImage.src = dataURL;
+                
+                // 画像が読み込まれるのを待つ
+                await new Promise((resolve) => {
+                    tempImage.onload = resolve;
+                });
                 
                 // リーダーのAPIを確認
-                if (typeof this.reader.decodeFromImage === 'function') {
-                    // 最新のZXing APIを使用
-                    result = await this.reader.decodeFromImage(this.canvasElement);
-                    console.log('decodeFromImageの結果:', result);
-                } else if (typeof this.reader.decodeFromImageElement === 'function') {
-                    // 別のAPI形式を試す
-                    result = await this.reader.decodeFromImageElement(this.canvasElement);
-                    console.log('decodeFromImageElementの結果:', result);
-                } else if (typeof this.reader.decode === 'function') {
-                    // 単一QRコード検出用のAPIを使用
-                    result = await this.reader.decode(imageData);
-                    console.log('decodeの結果:', result);
-                } else {
-                    console.error('互換性のあるデコードメソッドが見つかりません');
-                    return;
-                }
-                
-                // 結果が配列でない場合は単一結果として処理
-                const results = Array.isArray(result) ? result : (result ? [result] : []);
-                console.log('処理用結果:', results);
-                
-                // 新しいコードが検出された場合
-                if (results.length > 0) {
-                    let newCodesAdded = 0;
+                if (typeof this.reader.decodeFromImageElement === 'function') {
+                    // イメージ要素からデコード
+                    const result = await this.reader.decodeFromImageElement(tempImage);
                     
-                    // 検出されたコードを処理
-                    results.forEach(result => {
+                    if (result) {
                         let codeData;
                         if (typeof result.getText === 'function') {
                             codeData = result.getText();
@@ -363,82 +384,28 @@ const MultiQRScanner = {
                             codeData = String(result);
                         }
                         
-                        console.log('検出されたコード:', codeData);
+                        console.log('ZXingで検出:', codeData);
                         
-                        // 重複チェック - 既に同じデータのコードがあれば追加しない
+                        // 重複チェック
                         const isDuplicate = this.detectedCodes.some(item => item.data === codeData);
                         
                         if (!isDuplicate) {
-                            // 新しいコードのみを追加
-                            let format = 'QR_CODE';
-                            if (result.getBarcodeFormat && typeof result.getBarcodeFormat === 'function') {
-                                format = result.getBarcodeFormat().toString();
-                            } else if (result.format) {
-                                format = result.format;
-                            }
-                            
                             this.detectedCodes.push({
                                 id: Date.now() + Math.random().toString(36).substring(2, 9),
                                 data: codeData,
-                                format: format,
+                                format: 'QR_CODE',
                                 timestamp: new Date().toISOString()
                             });
                             
-                            newCodesAdded++;
-                            
-                            // ビープ音を鳴らす
+                            this.lastDetection = now;
                             this.playBeepSound();
+                            this.updateResultsUI();
+                            this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
                         }
-                    });
-                    
-                    // 新しいコードが追加された場合のみ更新
-                    if (newCodesAdded > 0) {
-                        this.lastDetection = now; // 検出時刻を更新
-                        
-                        // UI更新
-                        this.updateResultsUI();
-                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                    }
-                } else {
-                    console.log('QRコードが検出されませんでした');
-                }
-            } catch (decodeError) {
-                console.warn('デコードエラー:', decodeError);
-                
-                // jsQRライブラリでのフォールバック処理を試す
-                if (typeof jsQR === 'function') {
-                    console.log('jsQRライブラリでの検出を試みます');
-                    try {
-                        const code = jsQR(
-                            imageData.data,
-                            imageData.width,
-                            imageData.height
-                        );
-                        
-                        if (code) {
-                            console.log('jsQRで検出:', code.data);
-                            
-                            // 重複チェック
-                            const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
-                            
-                            if (!isDuplicate) {
-                                this.detectedCodes.push({
-                                    id: Date.now() + Math.random().toString(36).substring(2, 9),
-                                    data: code.data,
-                                    format: 'QR_CODE',
-                                    timestamp: new Date().toISOString()
-                                });
-                                
-                                this.lastDetection = now;
-                                this.playBeepSound();
-                                this.updateResultsUI();
-                                this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                            }
-                        }
-                    } catch (jsQRError) {
-                        console.warn('jsQRデコードエラー:', jsQRError);
                     }
                 }
+            } catch (zxingError) {
+                console.warn('ZXingデコードエラー:', zxingError);
             }
             
         } catch (error) {
