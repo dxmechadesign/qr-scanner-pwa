@@ -33,7 +33,7 @@ const MultiQRScanner = {
             
             // キャンバス要素の作成
             this.canvasElement = document.createElement('canvas');
-            this.canvasContext = this.canvasElement.getContext('2d');
+            this.canvasContext = this.canvasElement.getContext('2d', { willReadFrequently: true });
             
             // 結果リストの確認
             this.resultsList = document.getElementById('detected-codes-list');
@@ -293,12 +293,11 @@ const MultiQRScanner = {
         }
         
         try {
-            //console.log('フレームスキャン中...');
             // 現在時刻を取得
             const now = Date.now();
             
-            // 前回の検出から1秒以内なら処理をスキップ（頻度制限）
-            if (now - this.lastDetection < 1000) {
+            // 前回の検出から500ms以内なら処理をスキップ（頻度制限）
+            if (now - this.lastDetection < 500) {
                 return;
             }
             
@@ -316,15 +315,17 @@ const MultiQRScanner = {
                 this.canvasElement.width, 
                 this.canvasElement.height
             );
-            //console.log('イメージデータ取得:', imageData.width, 'x', imageData.height);
             
-            // まずjsQRライブラリでの検出を試みる（より安定している）
+            // jsQRライブラリを使用してQRコードを検出
             if (typeof jsQR === 'function') {
                 try {
                     const code = jsQR(
                         imageData.data,
                         imageData.width,
-                        imageData.height
+                        imageData.height,
+                        {
+                            inversionAttempts: "dontInvert",  // 白黒反転の試行を減らして速度向上
+                        }
                     );
                     
                     if (code) {
@@ -345,67 +346,14 @@ const MultiQRScanner = {
                             this.playBeepSound();
                             this.updateResultsUI();
                             this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                            return; // 検出成功したら処理終了
+                        } else {
+                            // 重複した場合も検出時刻を更新（連続検出の抑制のため）
+                            this.lastDetection = now;
                         }
                     }
                 } catch (jsQRError) {
                     console.warn('jsQRデコードエラー:', jsQRError);
                 }
-            }
-            
-            // jsQRで検出できなかった場合はZXingを試す
-            try {
-                // キャンバスから一時的なイメージ要素を作成
-                const tempImage = document.createElement('img');
-                tempImage.width = this.canvasElement.width;
-                tempImage.height = this.canvasElement.height;
-                
-                // データURLに変換
-                const dataURL = this.canvasElement.toDataURL('image/png');
-                tempImage.src = dataURL;
-                
-                // 画像が読み込まれるのを待つ
-                await new Promise((resolve) => {
-                    tempImage.onload = resolve;
-                });
-                
-                // リーダーのAPIを確認
-                if (typeof this.reader.decodeFromImageElement === 'function') {
-                    // イメージ要素からデコード
-                    const result = await this.reader.decodeFromImageElement(tempImage);
-                    
-                    if (result) {
-                        let codeData;
-                        if (typeof result.getText === 'function') {
-                            codeData = result.getText();
-                        } else if (result.text) {
-                            codeData = result.text;
-                        } else {
-                            codeData = String(result);
-                        }
-                        
-                        console.log('ZXingで検出:', codeData);
-                        
-                        // 重複チェック
-                        const isDuplicate = this.detectedCodes.some(item => item.data === codeData);
-                        
-                        if (!isDuplicate) {
-                            this.detectedCodes.push({
-                                id: Date.now() + Math.random().toString(36).substring(2, 9),
-                                data: codeData,
-                                format: 'QR_CODE',
-                                timestamp: new Date().toISOString()
-                            });
-                            
-                            this.lastDetection = now;
-                            this.playBeepSound();
-                            this.updateResultsUI();
-                            this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                        }
-                    }
-                }
-            } catch (zxingError) {
-                console.warn('ZXingデコードエラー:', zxingError);
             }
             
         } catch (error) {
