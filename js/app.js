@@ -42,7 +42,20 @@ const App = {
         // 複数スキャナー初期化
         this.initMultiScanner()
             .then(() => {
-                // 複数スキャナー初期化成功後の処理
+                console.log('複数スキャナーが正常に初期化されました');
+                // 複数スキャンボタンが存在することを確認
+                const multiScanButton = document.getElementById('nav-multi-scan');
+                if (multiScanButton) {
+                    console.log('複数スキャンボタンが見つかりました');
+                    
+                    // ボタンのイベントリスナーを確実に設定
+                    multiScanButton.addEventListener('click', () => {
+                        console.log('複数スキャンボタンがクリックされました');
+                        this.handleNavigation('multiScan');
+                    });
+                } else {
+                    console.error('複数スキャンボタンが見つかりません');
+                }
             })
             .catch(error => {
                 console.error('複数スキャナーの初期化に失敗:', error);

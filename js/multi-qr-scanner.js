@@ -15,12 +15,37 @@ const MultiQRScanner = {
         return new Promise((resolve, reject) => {
             console.log('MultiQRScanner: 初期化開始');
             
-            // 要素の参照
+            // コンテナの存在を確認
+            const container = document.getElementById('multi-qr-container');
+            if (!container) {
+                console.error('multi-qr-containerが見つかりません');
+                reject(new Error('multi-qr-containerが見つかりません'));
+                return;
+            }
+            
+            // ビデオ要素の存在を確認
             this.videoElement = document.getElementById('multi-qr-video');
+            if (!this.videoElement) {
+                console.error('multi-qr-video要素が見つかりません');
+                reject(new Error('multi-qr-video要素が見つかりません'));
+                return;
+            }
+            
+            // キャンバス要素の作成
             this.canvasElement = document.createElement('canvas');
             this.canvasContext = this.canvasElement.getContext('2d');
+            
+            // 結果リストの確認
             this.resultsList = document.getElementById('detected-codes-list');
+            if (!this.resultsList) {
+                console.error('detected-codes-list要素が見つかりません');
+            }
+            
+            // ステータス要素の確認
             this.statusElement = document.getElementById('detection-status');
+            if (!this.statusElement) {
+                console.error('detection-status要素が見つかりません');
+            }
             
             // ZXingの利用可能性をチェック
             if (typeof window.ZXing === 'undefined') {
@@ -403,13 +428,29 @@ const MultiQRScanner = {
     
     // ビュー表示
     showMultiScanView() {
-        // キャプチャUIをアクティブに
-        document.getElementById('multi-qr-container').style.display = 'block';
+        console.log('showMultiScanViewが呼び出されました');
         
-        // 他のビューを非表示
-        const otherViews = document.querySelectorAll('.view-container:not(#multi-qr-container)');
-        otherViews.forEach(view => {
-            view.style.display = 'none';
-        });
+        // 要素の存在を確認
+        const multiContainer = document.getElementById('multi-qr-container');
+        console.log('multi-qr-container要素:', multiContainer);
+        
+        if (multiContainer) {
+            console.log('multi-qr-container表示前のスタイル:', multiContainer.style.display);
+            // キャプチャUIをアクティブに
+            multiContainer.style.display = 'block';
+            console.log('multi-qr-container表示後のスタイル:', multiContainer.style.display);
+            
+            // イベントリスナーを再設定
+            this.setupEventListeners();
+            
+            // 他のビューを非表示
+            const otherViews = document.querySelectorAll('.view-container:not(#multi-qr-container)');
+            console.log('他のビュー数:', otherViews.length);
+            otherViews.forEach(view => {
+                view.style.display = 'none';
+            });
+        } else {
+            console.error('multi-qr-container要素が見つかりません');
+        }
     }
 };
