@@ -25,7 +25,6 @@ const App = {
             duplicateNotification: document.getElementById('duplicate-notification'),
             navButtons: {
                 scan: document.getElementById('nav-scan'),
-                multiScan: document.getElementById('nav-multi-scan'),
                 history: document.getElementById('nav-history'),
                 settings: document.getElementById('nav-settings')
             }
@@ -433,17 +432,6 @@ const App = {
                 }
                 break;
                 
-            case 'multiScan':
-                // 複数スキャンビュー
-                const multiContainer = document.getElementById('multi-qr-container');
-                if (multiContainer) multiContainer.style.display = 'block';
-                
-                // 通常スキャナーを停止
-                if (typeof QRScanner !== 'undefined') {
-                    QRScanner.stop();
-                }
-                break;
-                
             case 'history':
                 // 履歴ビュー
                 const historyContainer = document.getElementById('history-container');
@@ -478,7 +466,7 @@ const App = {
         }
         
         // 非表示にするビューを検索
-        const views = ['scanner-container', 'multi-qr-container', 'history-container'];
+        const views = ['scanner-container', 'history-container'];
         views.forEach(id => {
             if (id !== target + '-container') {
                 const view = document.getElementById(id);
