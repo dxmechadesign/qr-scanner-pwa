@@ -256,7 +256,7 @@ const MultiQRScanner = {
             this.isScanning ? 'scanning' : 'stopped');
     },
     
-    // カメラ起動 (改良版)
+    // カメラ起動の改善
     async startCamera() {
         console.log('カメラ起動開始...');
         try {
@@ -270,16 +270,7 @@ const MultiQRScanner = {
             
             // 解像度レベルリスト (高→低の順)
             const resolutionLevels = [
-                // レベル1: HD (高画質)
-                { 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        frameRate: { ideal: 15, min: 10 }
-                    } 
-                },
-                // レベル2: 中解像度
+                // レベル1: 中解像度
                 { 
                     video: { 
                         facingMode: 'environment',
@@ -287,7 +278,7 @@ const MultiQRScanner = {
                         height: { ideal: 600 }
                     } 
                 },
-                // レベル3: 低解像度
+                // レベル2: 低解像度
                 { 
                     video: { 
                         facingMode: 'environment',
@@ -295,7 +286,7 @@ const MultiQRScanner = {
                         height: { ideal: 480 }
                     } 
                 },
-                // レベル4: 最低限の設定
+                // レベル3: 最低限の設定
                 { 
                     video: true
                 }
@@ -310,6 +301,20 @@ const MultiQRScanner = {
                 console.log(`カメラ解像度レベル${i+1}を試行:`, constraints);
                 
                 try {
+                    // 他のすべてのメディアトラックを停止（追加）
+                    if (window.activeMediaStreams) {
+                        window.activeMediaStreams.forEach(s => {
+                            s.getTracks().forEach(track => {
+                                track.stop();
+                                console.log('既存のトラックを停止:', track.kind);
+                            });
+                        });
+                        window.activeMediaStreams = [];
+                    }
+                    
+                    // 操作の間に少し待機
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
                     stream = await navigator.mediaDevices.getUserMedia(constraints);
                     console.log(`カメラ解像度レベル${i+1}で成功しました`);
                     break; // 成功したらループを抜ける
@@ -320,7 +325,7 @@ const MultiQRScanner = {
                     if (i < resolutionLevels.length - 1) {
                         console.log('次の解像度レベルを試行します...');
                         // 少し待機してからリトライ
-                        await new Promise(resolve => setTimeout(resolve, 300));
+                        await new Promise(resolve => setTimeout(resolve, 500));
                     }
                 }
             }

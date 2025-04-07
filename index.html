@@ -147,5 +147,57 @@
             });
         }
     </script>
+
+    <script>
+        // グローバルなカメラストリーム管理
+        window.activeMediaStreams = [];
+        
+        // アプリケーション全体のカメラリソース解放
+        window.releaseAllCameras = function() {
+            console.log('すべてのカメラリソースを解放します');
+            
+            // メディアトラックの停止
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                if (window.activeMediaStreams) {
+                    window.activeMediaStreams.forEach(stream => {
+                        if (stream && stream.getTracks) {
+                            stream.getTracks().forEach(track => {
+                                track.stop();
+                                console.log('メディアトラック停止:', track.kind);
+                            });
+                        }
+                    });
+                    window.activeMediaStreams = [];
+                }
+            }
+            
+            // すべてのビデオ要素のソースをクリア
+            document.querySelectorAll('video').forEach(video => {
+                if (video.srcObject) {
+                    video.srcObject = null;
+                    console.log('ビデオソースをクリア:', video.id);
+                }
+            });
+            
+            return new Promise(resolve => setTimeout(resolve, 500));
+        };
+    </script>
+
+    <script>
+        // ページ読み込み時にカメラリソースを初期化
+        document.addEventListener('DOMContentLoaded', async () => {
+            // カメラアクセス許可を事前に取得
+            try {
+                console.log('カメラ許可を事前に確認します');
+                const temporaryStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                
+                // 許可を取得したら即座に停止
+                temporaryStream.getTracks().forEach(track => track.stop());
+                console.log('カメラ許可を確認しました');
+            } catch (error) {
+                console.warn('カメラ許可の事前確認に失敗:', error);
+            }
+        });
+    </script>
 </body>
 </html>
