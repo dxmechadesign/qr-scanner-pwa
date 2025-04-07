@@ -262,3 +262,99 @@
     min-width: 120px;
   }
 }
+
+    /* QRコードスキャン機能用スタイル拡張 */
+    .scan-guides {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        z-index: 10;
+    }
+    
+    .guide {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background-color: rgba(255, 255, 255, 0.5);
+        box-shadow: 0 0 5px rgba(0, 0, 255, 0.7);
+        animation: pulse 2s infinite;
+    }
+    
+    .guide-top {
+        top: 33%;
+    }
+    
+    .guide-middle {
+        top: 50%;
+    }
+    
+    .guide-bottom {
+        top: 67%;
+    }
+    
+    @keyframes pulse {
+        0% { opacity: 0.3; height: 1px; }
+        50% { opacity: 0.7; height: 2px; }
+        100% { opacity: 0.3; height: 1px; }
+    }
+    
+    .debug-container {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 200px;
+        height: 150px;
+        border: 2px solid red;
+        background: rgba(0,0,0,0.5);
+        z-index: 100;
+    }
+    
+    .advanced-controls {
+        display: flex;
+        justify-content: center;
+        margin-top: 10px;
+        gap: 10px;
+    }
+    
+    .scanner-toast {
+        position: fixed;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%) translateY(100px);
+        background-color: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 4px;
+        z-index: 1000;
+        transition: transform 0.3s ease;
+    }
+    
+    .scanner-toast.show {
+        transform: translateX(-50%) translateY(0);
+    }
+    
+    .scan-status.processing {
+        color: #ff9900;
+        animation: pulse 1s infinite;
+    }
+    
+    .mode-notification {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        z-index: 1000;
+        transition: opacity 0.5s;
+    }
+    
+    .fade-out {
+        opacity: 0;
+    }

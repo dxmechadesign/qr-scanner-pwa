@@ -74,10 +74,16 @@
                     <div class="scan-overlay">
                         <div class="scan-frame"></div>
                         <div class="scan-instruction">複数のQRコードを検出します</div>
+                        <!-- ここにスキャンガイドを追加 -->
                         <div class="scan-guides">
                             <div class="guide guide-top"></div>
                             <div class="guide guide-middle"></div>
                             <div class="guide guide-bottom"></div>
+                        </div>
+                        
+                        <!-- ここにデバッグコンテナを追加 -->
+                        <div id="debug-container" class="debug-container" style="display: none;">
+                            <!-- ここにデバッグ画像が表示されます -->
                         </div>
                     </div>
                 </div>
@@ -86,6 +92,13 @@
                     <button id="start-multi-scan" class="primary-button">スキャン開始</button>
                     <button id="stop-multi-scan" class="secondary-button" disabled>停止</button>
                     <button id="refresh-camera" class="secondary-button">カメラをリフレッシュ</button>
+
+                    <!-- ここに手動キャプチャボタンと処理モード切替ボタンを追加 -->
+                    <div class="advanced-controls">
+                        <button id="manual-capture" class="primary-button">手動キャプチャ</button>
+                        <button id="toggle-processing" class="secondary-button">処理モード切替</button>
+                        <button id="debug-toggle" class="secondary-button">デバッグ表示</button>
+                    </div>
                 </div>
                 
                 <div class="results-section">
@@ -237,6 +250,7 @@
     <script src="js/qr-scanner.js"></script>
     <script src="js/app.js"></script>
     <script src="js/multi-qr-scanner.js"></script>
+    <script src="https://docs.opencv.org/4.5.5/opencv.js"></script>
     
     <script>
         // カメラリフレッシュボタンのイベント
@@ -339,5 +353,101 @@
             });
         }
     </script>
+    <script>
+        // ハイブリッドスキャン関連のイベントリスナーを設定
+        document.addEventListener('DOMContentLoaded', function() {
+            // デバッグ表示切り替え
+            const debugToggleBtn = document.getElementById('debug-toggle');
+            if (debugToggleBtn) {
+                debugToggleBtn.addEventListener('click', function() {
+                    const debugContainer = document.getElementById('debug-container');
+                    if (debugContainer) {
+                        const isHidden = debugContainer.style.display === 'none';
+                        debugContainer.style.display = isHidden ? 'block' : 'none';
+                        this.textContent = isHidden ? 'デバッグ非表示' : 'デバッグ表示';
+                        
+                        // デバッグモードの切り替え
+                        if (typeof MultiQRScanner !== 'undefined') {
+                            MultiQRScanner.imageProcessing.debug = isHidden;
+                        }
+                    }
+                });
+            }
+            
+            // 手動キャプチャボタン
+            const manualCaptureBtn = document.getElementById('manual-capture');
+            if (manualCaptureBtn) {
+                manualCaptureBtn.addEventListener('click', function() {
+                    if (typeof MultiQRScanner !== 'undefined') {
+                        // 一時的にスキャンを停止
+                        const wasScanning = MultiQRScanner.isScanning;
+                        if (wasScanning) {
+                            MultiQRScanner.isScanning = false;
+                        }
+                        
+                        // 高品質な単発キャプチャを実行
+                        setTimeout(function() {
+                            MultiQRScanner.manualCapture();
+                            
+                            // スキャン状態を元に戻す
+                            setTimeout(function() {
+                                MultiQRScanner.isScanning = wasScanning;
+                            }, 1000);
+                        }, 100);
+                    }
+                });
+            }
+            
+            // 処理モード切替ボタン
+            const toggleProcessingBtn = document.getElementById('toggle-processing');
+            if (toggleProcessingBtn) {
+                toggleProcessingBtn.addEventListener('click', function() {
+                    if (typeof MultiQRScanner !== 'undefined') {
+                        // 処理モードを切り替え
+                        const currentMode = MultiQRScanner.processingMode || 'hybrid';
+                        MultiQRScanner.processingMode = (currentMode === 'hybrid') ? 'legacy' : 'hybrid';
+                        
+                        // ボタンテキストを更新
+                        this.textContent = (MultiQRScanner.processingMode === 'hybrid') 
+                            ? 'レガシーモードに切替' 
+                            : 'ハイブリッドモードに切替';
+                        
+                        // 通知
+                        const notification = document.createElement('div');
+                        notification.className = 'mode-notification';
+                        notification.textContent = `${MultiQRScanner.processingMode}モードに切り替えました`;
+                        document.body.appendChild(notification);
+                        
+                        setTimeout(() => {
+                            notification.classList.add('fade-out');
+                            setTimeout(() => {
+                                notification.remove();
+                            }, 500);
+                        }, 2000);
+                    }
+                });
+            }
+        });
+        
+        // OpenCV.js読み込み完了イベントのハンドラ
+        window.onOpenCVReady = function() {
+            console.log('OpenCV.js の読み込みが完了しました');
+            
+            // カスタムイベントを発火
+            document.dispatchEvent(new CustomEvent('opencv-ready'));
+            
+            // 必要に応じてUIを更新
+            const statusElement = document.getElementById('detection-status');
+            if (statusElement) {
+                statusElement.textContent = 'OpenCVを使った高度な検出が利用可能です';
+            }
+            
+            // MultiQRScannerオブジェクトが存在する場合は状態を更新
+            if (typeof MultiQRScanner !== 'undefined') {
+                MultiQRScanner.isOpenCVReady = true;
+            }
+        };
+    </script>
+    
 </body>
 </html>

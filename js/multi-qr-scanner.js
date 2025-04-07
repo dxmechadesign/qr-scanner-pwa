@@ -24,7 +24,10 @@ const MultiQRScanner = {
         edgeEnhancement: true,     // エッジ強調処理を追加
         debug: false
     },
-    
+
+    // OpenCV初期化状態を追跡 (ここに追加)
+    isOpenCVReady: false,
+    processingMode: 'hybrid', // 'hybrid' または 'legacy'
 
     // 初期化
     init() {
@@ -41,6 +44,9 @@ const MultiQRScanner = {
 
             // 設定の読み込み
             this.loadImageProcessingSettings();
+
+            // OpenCV初期化状態を確認（ここに追加）
+            this.setupOpenCV();
             
             // ビデオ要素の存在を確認
             this.videoElement = document.getElementById('multi-qr-video');
@@ -148,6 +154,24 @@ const MultiQRScanner = {
             }
         });
     },
+
+    // OpenCV初期化の設定（新規追加）
+    setupOpenCV() {
+        // すでに読み込まれているか確認
+        if (typeof cv !== 'undefined') {
+            this.isOpenCVReady = true;
+            console.log('OpenCV.js が既に読み込まれています');
+            return;
+        }
+        
+        // イベントリスナーを設定
+        document.addEventListener('opencv-ready', () => {
+            this.isOpenCVReady = true;
+            console.log('OpenCV.js が正常に読み込まれました');
+        });
+        
+        console.log('OpenCV.js の読み込みを待機中...');
+    },
     
     // イベントリスナーのセットアップを確認
     setupEventListeners() {
@@ -198,7 +222,7 @@ const MultiQRScanner = {
     },
     
     // スキャン開始
-    async startScanning() {
+    startScanning() {
         if (this.isScanning) return;
         
         try {
@@ -208,21 +232,31 @@ const MultiQRScanner = {
             this.updateStatus('カメラ準備中...', 'processing');
             
             // カメラの起動
-            await this.startCamera();
-            
-            // スキャン開始
-            this.isScanning = true;
-            
-            // ボタン状態の更新
-            this.updateButtonState(true);
-            
-            // スキャン処理の開始
-            console.log('スキャンインターバル設定...');
-            this.scanInterval = setInterval(() => this.scanVideoFrame(), 150);
-            
-            // スキャン中表示
-            this.updateStatus('スキャン中...', 'scanning');
-            
+            this.startCamera()
+                .then(() => {
+                    // スキャン開始
+                    this.isScanning = true;
+                    
+                    // ボタン状態の更新
+                    this.updateButtonState(true);
+                    
+                    // 既存のスキャンインターバルをクリア
+                    if (this.scanInterval) {
+                        clearInterval(this.scanInterval);
+                        this.scanInterval = null;
+                    }
+                    
+                    // ハイブリッドスキャンを開始 (ここを変更)
+                    this.hybridScan();
+                    
+                    // スキャン中表示
+                    this.updateStatus('スキャン中...', 'scanning');
+                })
+                .catch(error => {
+                    console.error('スキャン開始エラー:', error);
+                    this.updateStatus('カメラ起動エラー', 'error');
+                    this.isScanning = false;
+                });
         } catch (error) {
             console.error('スキャン開始エラー:', error);
             this.updateStatus('カメラ起動エラー', 'error');
@@ -693,6 +727,265 @@ const MultiQRScanner = {
             }
         } catch (error) {
             console.error('スキャン処理エラー:', error);
+        }
+    },
+
+    // ハイブリッドスキャン処理（新規追加）
+    async hybridScan() {
+        if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
+            return;
+        }
+        
+        try {
+            // パフォーマンス計測開始
+            const startTime = performance.now();
+            
+            // ビデオからフレームをキャプチャ
+            this.canvasContext.drawImage(
+                this.videoElement, 
+                0, 0, 
+                this.canvasElement.width, 
+                this.canvasElement.height
+            );
+            
+            // モード確認
+            if (this.processingMode !== 'legacy' && this.isOpenCVReady && typeof cv !== 'undefined') {
+                // OpenCVを使用した処理
+                const qrRegions = this.processWithOpenCV();
+                
+                if (qrRegions && qrRegions.length > 0) {
+                    console.log(`${qrRegions.length}個のQRコード候補領域を検出`);
+                    
+                    // 各候補領域からQRコードを読み取り
+                    let detectedCount = 0;
+                    
+                    for (const region of qrRegions) {
+                        // 領域の画像データを取得
+                        const regionData = this.canvasContext.getImageData(
+                            region.x, region.y, region.width, region.height
+                        );
+                        
+                        // jsQRでQRコードを検出
+                        const code = jsQR(
+                            regionData.data,
+                            regionData.width,
+                            regionData.height,
+                            { inversionAttempts: "dontInvert" }
+                        );
+                        
+                        if (code) {
+                            // 重複チェック
+                            const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
+                            
+                            if (!isDuplicate) {
+                                detectedCount++;
+                                
+                                this.detectedCodes.push({
+                                    id: Date.now() + Math.random().toString(36).substring(2, 9),
+                                    data: code.data,
+                                    format: 'QR_CODE',
+                                    timestamp: new Date().toISOString(),
+                                    region: `x=${region.x},y=${region.y}`
+                                });
+                                
+                                this.lastDetection = Date.now();
+                                this.playBeepSound();
+                            }
+                        }
+                    }
+                    
+                    if (detectedCount > 0) {
+                        this.updateResultsUI();
+                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
+                    }
+                }
+            } else {
+                // OpenCVが利用できない場合はフォールバック処理
+                this.fallbackScan();
+            }
+            
+            // スキャン間隔を調整
+            const processingTime = performance.now() - startTime;
+            console.log(`ハイブリッド処理時間: ${processingTime.toFixed(2)}ms`);
+            
+            // 次のスキャンをスケジュール
+            if (this.isScanning) {
+                setTimeout(() => {
+                    this.hybridScan();
+                }, Math.max(300, processingTime * 1.5));
+            }
+        } catch (error) {
+            console.error('ハイブリッドスキャンエラー:', error);
+            
+            // エラー発生時もフォールバック処理を試行
+            this.fallbackScan();
+            
+            // 次のスキャンをスケジュール
+            if (this.isScanning) {
+                setTimeout(() => {
+                    this.hybridScan();
+                }, 1000);
+            }
+        }
+    },
+
+    // OpenCVを使用した画像処理（新規追加）
+    processWithOpenCV() {
+        try {
+            // キャンバスからイメージデータを取得
+            const imageData = this.canvasContext.getImageData(
+                0, 0, this.canvasElement.width, this.canvasElement.height
+            );
+            
+            // ImageDataからMat（OpenCVの画像形式）に変換
+            const src = cv.matFromImageData(imageData);
+            const dst = new cv.Mat();
+            
+            // グレースケール変換
+            cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY);
+            
+            // 適応的閾値処理（コントラスト強調）
+            const binary = new cv.Mat();
+            cv.adaptiveThreshold(dst, binary, 255, 
+                            cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                            cv.THRESH_BINARY, 25, 10);
+            
+            // モルフォロジー演算でノイズ除去
+            const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+            const processedImg = new cv.Mat();
+            cv.morphologyEx(binary, processedImg, cv.MORPH_CLOSE, kernel);
+            
+            // 処理済み画像をデバッグ表示（オプション）
+            if (this.imageProcessing.debug) {
+                // キャンバスに処理済み画像を表示
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = processedImg.cols;
+                tempCanvas.height = processedImg.rows;
+                cv.imshow(tempCanvas, processedImg);
+                
+                // デバッグ用HTMLに追加
+                const debugContainer = document.getElementById('debug-container');
+                if (debugContainer) {
+                    debugContainer.innerHTML = '';
+                    debugContainer.appendChild(tempCanvas);
+                }
+            }
+            
+            // 輪郭検出
+            const contours = new cv.MatVector();
+            const hierarchy = new cv.Mat();
+            cv.findContours(processedImg, contours, hierarchy, 
+                            cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            
+            // QRコード候補領域を抽出
+            const qrRegions = [];
+            for (let i = 0; i < contours.size(); ++i) {
+                const contour = contours.get(i);
+                const area = cv.contourArea(contour);
+                
+                // 小さすぎる領域は無視
+                if (area < 1000) continue;
+                
+                // 輪郭の周囲長を計算
+                const perimeter = cv.arcLength(contour, true);
+                const approx = new cv.Mat();
+                cv.approxPolyDP(contour, approx, 0.05 * perimeter, true);
+                
+                // QRコードの特徴を持つ領域を抽出
+                // (頂点数が4~10の領域、またはほぼ四角形の領域)
+                if (approx.rows >= 4 && approx.rows <= 10) {
+                    // 境界矩形を取得
+                    const rect = cv.boundingRect(contour);
+                    
+                    // アスペクト比をチェック (0.5 ~ 2.0 の範囲)
+                    const aspectRatio = rect.width / rect.height;
+                    if (aspectRatio >= 0.5 && aspectRatio <= 2.0) {
+                        // 領域を少し拡張 (マージン追加)
+                        const margin = Math.min(rect.width, rect.height) * 0.1;
+                        
+                        qrRegions.push({
+                            x: Math.max(0, Math.floor(rect.x - margin)),
+                            y: Math.max(0, Math.floor(rect.y - margin)),
+                            width: Math.min(Math.floor(rect.width + margin * 2), src.cols - rect.x),
+                            height: Math.min(Math.floor(rect.height + margin * 2), src.rows - rect.y)
+                        });
+                    }
+                }
+                approx.delete();
+            }
+            
+            // リソースを解放（重要）
+            src.delete();
+            dst.delete();
+            binary.delete();
+            kernel.delete();
+            processedImg.delete();
+            contours.delete();
+            hierarchy.delete();
+            
+            return qrRegions;
+        } catch (err) {
+            console.error('OpenCV処理エラー:', err);
+            return null;
+        }
+    },
+
+    // フォールバックスキャン処理（新規追加）
+    fallbackScan() {
+        try {
+            // 通常の分割領域スキャン
+            const imageData = this.canvasContext.getImageData(
+                0, 0, this.canvasElement.width, this.canvasElement.height
+            );
+            
+            // 画像処理を適用
+            this.processImage(imageData);
+            
+            // 処理後のデータを戻す
+            this.canvasContext.putImageData(imageData, 0, 0);
+            
+            // 画像を縦方向に3分割してスキャン
+            const divisionHeight = Math.floor(this.canvasElement.height / 3);
+            
+            for (let i = 0; i < 3; i++) {
+                const y = i * divisionHeight;
+                const height = divisionHeight;
+                
+                // 各領域のイメージデータを取得
+                const regionData = this.canvasContext.getImageData(
+                    0, y, this.canvasElement.width, height
+                );
+                
+                // jsQRでQRコードを検出
+                const code = jsQR(
+                    regionData.data,
+                    regionData.width,
+                    regionData.height,
+                    { inversionAttempts: "dontInvert" }
+                );
+                
+                if (code) {
+                    // 重複チェック
+                    const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
+                    
+                    if (!isDuplicate) {
+                        this.detectedCodes.push({
+                            id: Date.now() + Math.random().toString(36).substring(2, 9),
+                            data: code.data,
+                            format: 'QR_CODE',
+                            timestamp: new Date().toISOString(),
+                            region: `section=${i+1}`
+                        });
+                        
+                        this.lastDetection = Date.now();
+                        this.playBeepSound();
+                        this.updateResultsUI();
+                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('フォールバックスキャンエラー:', error);
         }
     },
     
@@ -1506,5 +1799,122 @@ const MultiQRScanner = {
         }, interval);
     },
 
+    // 手動キャプチャと高品質処理（新規追加）
+manualCapture() {
+    if (!this.videoElement || this.videoElement.readyState < 2) {
+        this.showToast('カメラが準備できていません');
+        return;
+    }
+    
+    try {
+        this.updateStatus('高精度キャプチャ中...', 'processing');
+        
+        // ビデオをキャンバスに描画
+        this.canvasContext.drawImage(
+            this.videoElement, 
+            0, 0, 
+            this.canvasElement.width, 
+            this.canvasElement.height
+        );
+        
+        // OpenCVが利用可能な場合
+        if (this.isOpenCVReady && typeof cv !== 'undefined') {
+            const regions = this.processWithOpenCV();
+            if (regions && regions.length > 0) {
+                this.updateStatus(`${regions.length}個の候補領域を検出`, 'processing');
+                
+                // 各領域を処理
+                let detectedCodes = 0;
+                for (const region of regions) {
+                    // 領域の画像データを取得
+                    const regionData = this.canvasContext.getImageData(
+                        region.x, region.y, region.width, region.height
+                    );
+                    
+                    // 領域を強調表示（デバッグ用）
+                    if (this.imageProcessing.debug) {
+                        this.canvasContext.strokeStyle = 'rgba(0, 255, 0, 0.7)';
+                        this.canvasContext.lineWidth = 3;
+                        this.canvasContext.strokeRect(
+                            region.x, region.y, region.width, region.height
+                        );
+                    }
+                    
+                    // jsQRでQRコードを検出
+                    const code = jsQR(
+                        regionData.data,
+                        regionData.width,
+                        regionData.height,
+                        { inversionAttempts: "dontInvert" }
+                    );
+                    
+                    if (code) {
+                        detectedCodes++;
+                        
+                        // 重複チェック
+                        const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
+                        
+                        if (!isDuplicate) {
+                            this.detectedCodes.push({
+                                id: Date.now() + Math.random().toString(36).substring(2, 9),
+                                data: code.data,
+                                format: 'QR_CODE',
+                                timestamp: new Date().toISOString(),
+                                region: `manual`
+                            });
+                            
+                            // 領域を緑色で強調表示
+                            this.canvasContext.strokeStyle = 'rgba(0, 255, 0, 1)';
+                            this.canvasContext.lineWidth = 5;
+                            this.canvasContext.strokeRect(
+                                region.x, region.y, region.width, region.height
+                            );
+                            
+                            this.playBeepSound();
+                        }
+                    }
+                }
+                
+                if (detectedCodes > 0) {
+                    this.updateResultsUI();
+                    this.updateStatus(`${detectedCodes}個のQRコードを検出`, 'success');
+                } else {
+                    this.updateStatus('QRコードが見つかりません', 'error');
+                }
+            } else {
+                this.updateStatus('QRコード候補が見つかりません', 'error');
+            }
+        } else {
+            // OpenCVが利用できない場合はフォールバック処理
+            this.updateStatus('フォールバックモードで処理中...', 'processing');
+            this.fallbackScan();
+        }
+    } catch (error) {
+        console.error('手動キャプチャエラー:', error);
+        this.updateStatus('キャプチャ処理エラー', 'error');
+    }
+},
+
+// トースト通知表示（新規追加）
+showToast(message) {
+    // トースト通知を表示する処理
+    const toast = document.createElement('div');
+    toast.className = 'scanner-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // アニメーションのためにクラスを追加
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+    
+    // 3秒後に削除
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            toast.remove();
+        }, 300);
+    }, 3000);
+}
     
 };
