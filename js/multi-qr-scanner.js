@@ -11,17 +11,20 @@ const MultiQRScanner = {
     lastDetection: 0,     // 最後の検出時刻
     tryLowerResolution: false, // 低解像度を試すフラグ
 
-    // プリプロセッシング用の追加プロパティ
+    // 画像処理パラメータを調整
     imageProcessing: {
-        enabled: true,           // プリプロセッシングを有効化
-        contrastFactor: 1.4,     // コントラスト調整係数（1.0で変更なし）
-        sharpeningEnabled: true, // シャープニング有効化
-        thresholdEnabled: true,  // 適応的な閾値処理を有効化
-        regionSize: 15,          // 閾値処理のリージョンサイズ
-        thresholdConstant: 5,    // 閾値処理の定数
-        useGrayscale: true,        // グレースケール変換
-        debug: false               // デバッグモード（処理前後の画像表示）
+        enabled: true,
+        contrastFactor: 1.6,       // コントラストを強くする（1.4→1.6）
+        sharpeningEnabled: true,   
+        thresholdEnabled: true,    
+        regionSize: 25,            // 局所領域サイズを大きくする（15→25）
+        thresholdConstant: 8,      // 閾値定数を大きくする（5→8）
+        useGrayscale: true,
+        adaptiveThreshold: true,   // 新たに適応的閾値処理を追加
+        edgeEnhancement: true,     // エッジ強調処理を追加
+        debug: false
     },
+    
 
     // 初期化
     init() {
@@ -260,6 +263,71 @@ const MultiQRScanner = {
     async startCamera() {
         console.log('カメラ起動開始...');
         try {
+            // すでにアクティブなストリームがある場合は停止
+            this.stopCamera();
+            
+            // グローバル変数がなければ初期化
+            if (!window.activeMediaStreams) {
+                window.activeMediaStreams = [];
+            }
+            
+            // 最適化されたカメラ設定
+            const optimizedConstraints = {
+                video: {
+                    facingMode: 'environment', // 背面カメラを使用
+                    width: { ideal: 1280 },    // 幅の理想値
+                    height: { ideal: 720 },    // 高さの理想値
+                    aspectRatio: { ideal: 4/3 }, // アスペクト比
+                    frameRate: { ideal: 15, min: 10 } // フレームレート
+                }
+            };
+            
+            // 高度なカメラ設定をサポートしているか確認
+            let advancedConstraintsSupported = false;
+            try {
+                // テスト用の簡易制約で確認
+                const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
+                advancedConstraintsSupported = supportedConstraints.focusMode && 
+                                            supportedConstraints.exposureMode;
+                console.log('サポートされている制約:', supportedConstraints);
+            } catch (e) {
+                console.log('高度なカメラ制約はサポートされていません');
+            }
+            
+            // 高度な設定がサポートされている場合のみ追加
+            if (advancedConstraintsSupported) {
+                optimizedConstraints.video.advanced = [
+                    { focusMode: 'continuous' },      // 連続的な自動フォーカス
+                    { exposureMode: 'continuous' },   // 自動露出
+                    { whiteBalanceMode: 'continuous' } // 自動ホワイトバランス
+                ];
+            }
+            
+            // 解像度レベルリスト (最適解から徐々に低下)
+            const resolutionLevels = [
+                optimizedConstraints, // 最適な設定を最初に試行
+                // レベル2: 中解像度
+                { 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 800 },
+                        height: { ideal: 600 }
+                    } 
+                },
+                // レベル3: 低解像度
+                { 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    } 
+                },
+                // レベル4: 最低限の設定
+                { 
+                    video: true
+                }
+            ];
+            
             // グローバルにすべてのメディアストリームを停止
             if (typeof window.releaseAllCameras === 'function') {
                 await window.releaseAllCameras();
@@ -299,30 +367,6 @@ const MultiQRScanner = {
                 throw new Error('カメラデバイスが見つかりません');
             }
             
-            // 時間をかけてカメラを起動（低いレベルから徐々に試行）
-            const resolutionLevels = [
-                // レベル1: 最低限の設定
-                { 
-                    video: true
-                },
-                // レベル2: 低解像度
-                { 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    } 
-                },
-                // レベル3: 中解像度
-                { 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 800 },
-                        height: { ideal: 600 }
-                    } 
-                }
-            ];
-            
             // 各解像度レベルを順番に試行
             let stream = null;
             let lastError = null;
@@ -340,6 +384,10 @@ const MultiQRScanner = {
                     
                     stream = await navigator.mediaDevices.getUserMedia(constraints);
                     console.log(`カメラ解像度レベル${i+1}で成功しました`);
+                    
+                    // カメラが起動したらストリームの状態を確認
+                    console.log('カメラストリーム情報:', stream.getVideoTracks()[0].getSettings());
+                    
                     break; // 成功したらループを抜ける
                 } catch (error) {
                     lastError = error;
@@ -1261,4 +1309,202 @@ const MultiQRScanner = {
             }
         }
     },
+
+    // 複数領域スキャン処理の追加
+    async scanMultipleRegions() {
+        if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
+            return;
+        }
+        
+        try {
+            // 現在のフレームをキャンバスに描画
+            this.canvasContext.drawImage(
+                this.videoElement, 
+                0, 0, 
+                this.canvasElement.width, 
+                this.canvasElement.height
+            );
+            
+            // 画面を複数の領域に分割してスキャン
+            const regions = [
+                // 上部領域
+                {
+                    x: 0,
+                    y: 0,
+                    width: this.canvasElement.width,
+                    height: this.canvasElement.height / 3
+                },
+                // 中央上部領域
+                {
+                    x: 0,
+                    y: this.canvasElement.height / 4,
+                    width: this.canvasElement.width,
+                    height: this.canvasElement.height / 3
+                },
+                // 中央領域
+                {
+                    x: 0,
+                    y: this.canvasElement.height / 3,
+                    width: this.canvasElement.width,
+                    height: this.canvasElement.height / 3
+                },
+                // 中央下部領域
+                {
+                    x: 0,
+                    y: this.canvasElement.height / 2,
+                    width: this.canvasElement.width,
+                    height: this.canvasElement.height / 3
+                },
+                // 下部領域
+                {
+                    x: 0,
+                    y: 2 * this.canvasElement.height / 3,
+                    width: this.canvasElement.width,
+                    height: this.canvasElement.height / 3
+                }
+            ];
+            
+            // 各領域を個別に処理
+            for (const region of regions) {
+                // 領域ごとに画像データを取得
+                const imageData = this.canvasContext.getImageData(
+                    region.x, region.y, region.width, region.height
+                );
+                
+                // 画像処理を適用
+                this.processImage(imageData);
+                
+                // 処理後の画像を使用してQRコードを検出（jsQRを使用）
+                const code = jsQR(
+                    imageData.data,
+                    imageData.width,
+                    imageData.height,
+                    {
+                        inversionAttempts: "dontInvert"
+                    }
+                );
+                
+                if (code) {
+                    // 重複チェック
+                    const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
+                    
+                    if (!isDuplicate) {
+                        this.detectedCodes.push({
+                            id: Date.now() + Math.random().toString(36).substring(2, 9),
+                            data: code.data,
+                            format: 'QR_CODE',
+                            timestamp: new Date().toISOString()
+                        });
+                        
+                        this.lastDetection = Date.now();
+                        this.playBeepSound();
+                        this.updateResultsUI();
+                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
+                        
+                        // 検出位置を視覚的に表示（デバッグモード）
+                        if (this.imageProcessing.debug) {
+                            this.highlightDetection(region.x + code.location.topLeftCorner.x, 
+                                                region.y + code.location.topLeftCorner.y,
+                                                code.location.dimension);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('複数領域スキャン処理エラー:', error);
+        }
+    },
+
+    // エッジ強調処理
+    enhanceEdges(imageData) {
+        const width = imageData.width;
+        const height = imageData.height;
+        const data = imageData.data;
+        const tempData = new Uint8ClampedArray(data);
+        
+        // Sobelフィルターによるエッジ検出
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                // 水平方向のエッジ検出フィルター
+                const hKernel = [
+                    -1, -2, -1,
+                    0,  0,  0,
+                    1,  2,  1
+                ];
+                
+                // 垂直方向のエッジ検出フィルター
+                const vKernel = [
+                    -1, 0, 1,
+                    -2, 0, 2,
+                    -1, 0, 1
+                ];
+                
+                let hSum = 0;
+                let vSum = 0;
+                
+                for (let ky = -1; ky <= 1; ky++) {
+                    for (let kx = -1; kx <= 1; kx++) {
+                        const idx = ((y + ky) * width + (x + kx)) * 4;
+                        const kernelIdx = (ky + 1) * 3 + (kx + 1);
+                        
+                        hSum += tempData[idx] * hKernel[kernelIdx];
+                        vSum += tempData[idx] * vKernel[kernelIdx];
+                    }
+                }
+                
+                // エッジの強さ
+                const edgeMagnitude = Math.sqrt(hSum * hSum + vSum * vSum);
+                const pixelIndex = (y * width + x) * 4;
+                
+                // 閾値を超えたらエッジとして強調
+                if (edgeMagnitude > 50) {
+                    data[pixelIndex] = data[pixelIndex + 1] = data[pixelIndex + 2] = 0; // 黒
+                } else {
+                    // 輝度が高い部分は白く
+                    if (tempData[pixelIndex] > 127) {
+                        data[pixelIndex] = data[pixelIndex + 1] = data[pixelIndex + 2] = 255; // 白
+                    }
+                }
+            }
+        }
+        
+        return imageData;
+    },
+
+    // 適応的なスキャンインターバルの設定
+    setAdaptiveScanInterval() {
+        // 初期スキャン間隔
+        let interval = 150; // ミリ秒
+        
+        // 最後の処理時間に基づいて調整
+        if (this.lastProcessingTime) {
+            if (this.lastProcessingTime > 100) {
+                // 処理に時間がかかっている場合、間隔を長くする
+                interval = Math.min(300, this.lastProcessingTime * 1.5);
+            } else if (this.lastProcessingTime < 30) {
+                // 処理が速い場合、間隔を短くする
+                interval = Math.max(50, this.lastProcessingTime * 2);
+            }
+        }
+        
+        console.log(`スキャンインターバルを${interval}msに調整`);
+        
+        // 既存のインターバルをクリア
+        if (this.scanInterval) {
+            clearInterval(this.scanInterval);
+        }
+        
+        // 新しいインターバルを設定
+        this.scanInterval = setInterval(() => {
+            const startTime = performance.now();
+            
+            // 複数領域スキャンを実行
+            this.scanMultipleRegions();
+            
+            // 処理時間を記録
+            this.lastProcessingTime = performance.now() - startTime;
+        }, interval);
+    },
+
+    
 };
