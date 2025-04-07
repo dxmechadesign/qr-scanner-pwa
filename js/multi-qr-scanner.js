@@ -9,6 +9,7 @@ const MultiQRScanner = {
     scanInterval: null,
     detectedCodes: [],    // 検出済みQRコード
     lastDetection: 0,     // 最後の検出時刻
+    tryLowerResolution: false, // 低解像度を試すフラグ
 
     // プリプロセッシング用の追加プロパティ
     imageProcessing: {
@@ -18,7 +19,8 @@ const MultiQRScanner = {
         thresholdEnabled: true,  // 適応的な閾値処理を有効化
         regionSize: 15,          // 閾値処理のリージョンサイズ
         thresholdConstant: 5,    // 閾値処理の定数
-        debug: false             // デバッグモード（処理前後の画像表示）
+        useGrayscale: true,        // グレースケール変換
+        debug: false               // デバッグモード（処理前後の画像表示）
     },
 
     // 初期化
@@ -33,6 +35,9 @@ const MultiQRScanner = {
                 reject(new Error('multi-qr-containerが見つかりません'));
                 return;
             }
+
+            // 設定の読み込み
+            this.loadImageProcessingSettings();
             
             // ビデオ要素の存在を確認
             this.videoElement = document.getElementById('multi-qr-video');
@@ -249,23 +254,56 @@ const MultiQRScanner = {
             this.isScanning ? 'scanning' : 'stopped');
     },
     
-    // カメラ起動
+    // カメラ起動の改善
     async startCamera() {
         console.log('カメラ起動開始...');
         try {
-            const constraints = { 
-                video: { 
-                    facingMode: 'environment',
-                    width: { ideal: 1920 },  // より高解像度に変更
-                    height: { ideal: 1080 }, // より高解像度に変更
-                    frameRate: { ideal: 30, min: 15 } // フレームレートを指定
-                } 
-            };
+            // すでにアクティブなストリームがある場合は停止
+            if (this.videoStream) {
+                this.stopCamera();
+            }
+            
+            // まず低解像度で試行
+            const constraints = this.tryLowerResolution ? 
+                { 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 15 }
+                    } 
+                } : 
+                { 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30, min: 15 }
+                    } 
+                };
             
             console.log('カメラ要求パラメータ:', constraints);
-            this.videoStream = await navigator.mediaDevices.getUserMedia(constraints);
-            console.log('カメラストリーム取得成功:', this.videoStream);
             
+            try {
+                this.videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                // 成功したらフラグをリセット
+                this.tryLowerResolution = false;
+            } catch (error) {
+                // 高解像度で失敗した場合、低解像度で再試行
+                if (!this.tryLowerResolution) {
+                    console.log('高解像度カメラアクセスに失敗、低解像度で再試行します');
+                    this.tryLowerResolution = true;
+                    return this.startCamera(); // 再帰的に呼び出し
+                } else {
+                    // それでも失敗した場合は最低限の設定で試行
+                    console.log('低解像度でも失敗、最低限の設定で試行します');
+                    this.videoStream = await navigator.mediaDevices.getUserMedia({
+                        video: true // 最低限の設定
+                    });
+                }
+            }
+            
+            console.log('カメラストリーム取得成功:', this.videoStream);
             this.videoElement.srcObject = this.videoStream;
             console.log('ビデオ要素にストリームをセット');
             
@@ -287,9 +325,29 @@ const MultiQRScanner = {
                             resolve(); // エラーでも続行
                         });
                 };
+                
+                // タイムアウト設定
+                setTimeout(() => {
+                    if (this.videoElement.readyState < 2) { // HAVE_CURRENT_DATA未満
+                        console.warn('ビデオメタデータのロードが遅延しています');
+                        resolve(); // タイムアウトでも続行
+                    }
+                }, 3000);
             });
         } catch (error) {
             console.error("カメラ起動エラー:", error);
+            
+            // より詳細なエラーメッセージ
+            if (error.name === 'NotAllowedError') {
+                this.updateStatus('カメラへのアクセスが拒否されました', 'error');
+            } else if (error.name === 'NotFoundError') {
+                this.updateStatus('カメラが見つかりません', 'error');
+            } else if (error.name === 'NotReadableError') {
+                this.updateStatus('カメラが他のアプリで使用中', 'error');
+            } else {
+                this.updateStatus('カメラアクセスエラー: ' + error.name, 'error');
+            }
+            
             throw error;
         }
     },
@@ -313,7 +371,7 @@ const MultiQRScanner = {
             // 現在時刻を取得
             const now = Date.now();
             
-            // 前回の検出から300ms以内なら処理をスキップ（高速スキャン用に短縮）
+            // 前回の検出から300ms以内なら処理をスキップ
             if (now - this.lastDetection < 300) {
                 return;
             }
@@ -325,8 +383,11 @@ const MultiQRScanner = {
                 this.canvasElement.width, 
                 this.canvasElement.height
             );
-
-            // 画像処理を適用 - ここが新しい部分
+            
+            // 画像処理の開始
+            const startTime = performance.now();
+            
+            // 画像データを取得
             const imageData = this.canvasContext.getImageData(
                 0, 0, 
                 this.canvasElement.width, 
@@ -338,6 +399,10 @@ const MultiQRScanner = {
             
             // 処理後の画像をキャンバスに戻す
             this.canvasContext.putImageData(imageData, 0, 0);
+            
+            // 処理時間を計測
+            const processingTime = performance.now() - startTime;
+            console.log(`画像処理時間: ${processingTime.toFixed(2)}ms`);
             
             let detected = false;
             
@@ -810,5 +875,247 @@ const MultiQRScanner = {
             
             this.saveProcessingSettings();
         });
-    }
+    },
+
+    // グレースケール変換
+    toGrayscale(imageData) {
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+            // 輝度の重み付け平均
+            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            data[i] = data[i + 1] = data[i + 2] = gray;
+        }
+        return imageData;
+    },
+    
+    // コントラスト調整
+    adjustContrast(imageData, factor) {
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+            for (let j = 0; j < 3; j++) {
+                const val = data[i + j];
+                // コントラスト調整式
+                data[i + j] = Math.min(255, Math.max(0, factor * (val - 128) + 128));
+            }
+        }
+        return imageData;
+    },
+    
+    // シャープニング処理
+    sharpen(imageData) {
+        const width = imageData.width;
+        const height = imageData.height;
+        const data = imageData.data;
+        const tempData = new Uint8ClampedArray(data);
+        
+        // エッジ強調用カーネル
+        const kernel = [
+            0, -1, 0,
+            -1, 5, -1,
+            0, -1, 0
+        ];
+        
+        // 画像の端から1ピクセル内側のみ処理（エッジ処理を簡略化）
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                const pixelIndex = (y * width + x) * 4;
+                
+                for (let c = 0; c < 3; c++) {
+                    let sum = 0;
+                    let kernelIndex = 0;
+                    
+                    for (let ky = -1; ky <= 1; ky++) {
+                        for (let kx = -1; kx <= 1; kx++) {
+                            const idx = ((y + ky) * width + (x + kx)) * 4 + c;
+                            sum += tempData[idx] * kernel[kernelIndex++];
+                        }
+                    }
+                    
+                    data[pixelIndex + c] = Math.min(255, Math.max(0, sum));
+                }
+            }
+        }
+        
+        return imageData;
+    },
+    
+    // 適応的二値化（シンプル版 - パフォーマンス重視）
+    adaptiveThreshold(imageData, regionSize = 15, constant = 5) {
+        const width = imageData.width;
+        const height = imageData.height;
+        const data = imageData.data;
+        
+        // 処理を高速化するため、サブサンプリングして平均を計算
+        const sampling = Math.max(1, Math.floor(regionSize / 3));
+        const halfRegion = Math.floor(regionSize / 2);
+        
+        // サブサンプリングした領域の平均を使用して処理
+        for (let y = 0; y < height; y += sampling) {
+            for (let x = 0; x < width; x += sampling) {
+                // 局所領域の平均を計算
+                let sum = 0;
+                let count = 0;
+                
+                // 周辺領域をサンプリング
+                for (let dy = -halfRegion; dy <= halfRegion; dy += sampling) {
+                    for (let dx = -halfRegion; dx <= halfRegion; dx += sampling) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        
+                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                            sum += data[(ny * width + nx) * 4];
+                            count++;
+                        }
+                    }
+                }
+                
+                // 平均を計算し、閾値として使用
+                const threshold = Math.floor(sum / count) - constant;
+                
+                // この領域内のピクセルを二値化
+                for (let sy = 0; sy < sampling && y + sy < height; sy++) {
+                    for (let sx = 0; sx < sampling && x + sx < width; sx++) {
+                        const currentY = y + sy;
+                        const currentX = x + sx;
+                        const idx = (currentY * width + currentX) * 4;
+                        
+                        // 閾値処理
+                        const value = data[idx] < threshold ? 0 : 255;
+                        data[idx] = data[idx + 1] = data[idx + 2] = value;
+                    }
+                }
+            }
+        }
+        
+        return imageData;
+    },
+    
+    // すべての画像処理を適用するメイン関数
+    processImage(imageData) {
+        if (!this.imageProcessing.enabled) return imageData;
+        
+        // オリジナルのデータをデバッグ用にコピー
+        let originalImageData = null;
+        if (this.imageProcessing.debug) {
+            originalImageData = new ImageData(
+                new Uint8ClampedArray(imageData.data), 
+                imageData.width, 
+                imageData.height
+            );
+        }
+        
+        // グレースケール変換
+        if (this.imageProcessing.useGrayscale) {
+            this.toGrayscale(imageData);
+        }
+        
+        // コントラスト調整（係数が1.0より大きい場合のみ）
+        if (this.imageProcessing.contrastFactor > 1.0) {
+            this.adjustContrast(imageData, this.imageProcessing.contrastFactor);
+        }
+        
+        // シャープニング
+        if (this.imageProcessing.sharpeningEnabled) {
+            this.sharpen(imageData);
+        }
+        
+        // 適応的二値化
+        if (this.imageProcessing.thresholdEnabled) {
+            this.adaptiveThreshold(
+                imageData, 
+                this.imageProcessing.regionSize, 
+                this.imageProcessing.thresholdConstant
+            );
+        }
+        
+        // デバッグ表示
+        if (this.imageProcessing.debug && originalImageData) {
+            this.showDebugImages(originalImageData, imageData);
+        }
+        
+        return imageData;
+    },
+    
+    // デバッグ表示用（オプション）
+    showDebugImages(originalImageData, processedImageData) {
+        // デバッグ用キャンバスの作成
+        let debugContainer = document.getElementById('qr-debug-container');
+        if (!debugContainer) {
+            debugContainer = document.createElement('div');
+            debugContainer.id = 'qr-debug-container';
+            debugContainer.style.position = 'fixed';
+            debugContainer.style.bottom = '10px';
+            debugContainer.style.right = '10px';
+            debugContainer.style.zIndex = '9999';
+            debugContainer.style.display = 'flex';
+            debugContainer.style.background = 'rgba(0,0,0,0.7)';
+            debugContainer.style.padding = '5px';
+            debugContainer.style.borderRadius = '5px';
+            document.body.appendChild(debugContainer);
+            
+            const originalCanvas = document.createElement('canvas');
+            originalCanvas.width = 160;
+            originalCanvas.height = 120;
+            originalCanvas.style.marginRight = '5px';
+            
+            const processedCanvas = document.createElement('canvas');
+            processedCanvas.width = 160;
+            processedCanvas.height = 120;
+            
+            debugContainer.appendChild(originalCanvas);
+            debugContainer.appendChild(processedCanvas);
+            
+            this.debugCanvases = {
+                original: originalCanvas.getContext('2d'),
+                processed: processedCanvas.getContext('2d')
+            };
+        }
+        
+        // 縮小表示
+        const origCtx = this.debugCanvases.original;
+        const procCtx = this.debugCanvases.processed;
+        
+        // 元画像を描画
+        origCtx.canvas.width = 160;
+        origCtx.canvas.height = 120;
+        origCtx.putImageData(originalImageData, 0, 0, 0, 0, 
+            origCtx.canvas.width, origCtx.canvas.height);
+        
+        // 処理後画像を描画
+        procCtx.canvas.width = 160;
+        procCtx.canvas.height = 120;
+        procCtx.putImageData(processedImageData, 0, 0, 0, 0, 
+            procCtx.canvas.width, procCtx.canvas.height);
+    },
+
+    // 画像処理設定の保存
+    saveImageProcessingSettings() {
+        if (typeof localStorage !== 'undefined') {
+            try {
+                localStorage.setItem('qr-image-processing', JSON.stringify(this.imageProcessing));
+                console.log('画像処理設定を保存しました');
+            } catch (error) {
+                console.error('設定の保存に失敗:', error);
+            }
+        }
+    },
+    
+    // 画像処理設定の読み込み
+    loadImageProcessingSettings() {
+        if (typeof localStorage !== 'undefined') {
+            try {
+                const saved = localStorage.getItem('qr-image-processing');
+                if (saved) {
+                    const parsedSettings = JSON.parse(saved);
+                    // 既存設定とマージ（新しい設定項目を保持）
+                    this.imageProcessing = {...this.imageProcessing, ...parsedSettings};
+                    console.log('画像処理設定を読み込みました:', this.imageProcessing);
+                }
+            } catch (error) {
+                console.error('設定の読み込みに失敗:', error);
+            }
+        }
+    },
 };
