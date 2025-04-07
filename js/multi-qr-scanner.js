@@ -9,7 +9,18 @@ const MultiQRScanner = {
     scanInterval: null,
     detectedCodes: [],    // 検出済みQRコード
     lastDetection: 0,     // 最後の検出時刻
-    
+
+    // プリプロセッシング用の追加プロパティ
+    imageProcessing: {
+        enabled: true,           // プリプロセッシングを有効化
+        contrastFactor: 1.4,     // コントラスト調整係数（1.0で変更なし）
+        sharpeningEnabled: true, // シャープニング有効化
+        thresholdEnabled: true,  // 適応的な閾値処理を有効化
+        regionSize: 15,          // 閾値処理のリージョンサイズ
+        thresholdConstant: 5,    // 閾値処理の定数
+        debug: false             // デバッグモード（処理前後の画像表示）
+    },
+
     // 初期化
     init() {
         return new Promise((resolve, reject) => {
@@ -314,6 +325,19 @@ const MultiQRScanner = {
                 this.canvasElement.width, 
                 this.canvasElement.height
             );
+
+            // 画像処理を適用 - ここが新しい部分
+            const imageData = this.canvasContext.getImageData(
+                0, 0, 
+                this.canvasElement.width, 
+                this.canvasElement.height
+            );
+            
+            // 画像処理を適用
+            this.processImage(imageData);
+            
+            // 処理後の画像をキャンバスに戻す
+            this.canvasContext.putImageData(imageData, 0, 0);
             
             let detected = false;
             
@@ -560,5 +584,231 @@ const MultiQRScanner = {
         } else {
             console.error('multi-qr-container要素が見つかりません');
         }
+    },
+
+    // グレースケール変換
+    toGrayscale(imageData) {
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+            // 輝度の重み付け平均（人間の視覚に適した変換）
+            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            data[i] = data[i + 1] = data[i + 2] = gray;
+        }
+        return imageData;
+    },
+    
+    // コントラスト調整
+    adjustContrast(imageData, factor) {
+        const data = imageData.data;
+        const factor255 = 255 * (factor - 1);
+        
+        for (let i = 0; i < data.length; i += 4) {
+            for (let j = 0; j < 3; j++) {
+                const val = data[i + j];
+                data[i + j] = Math.min(255, Math.max(0, factor * (val - 128) + 128));
+            }
+        }
+        return imageData;
+    },
+    
+    // シャープニング処理
+    sharpen(imageData) {
+        const width = imageData.width;
+        const height = imageData.height;
+        const data = imageData.data;
+        const tempData = new Uint8ClampedArray(data);
+        
+        // エッジ強調用カーネル
+        const kernel = [
+            0, -1, 0,
+            -1, 5, -1,
+            0, -1, 0
+        ];
+        
+        // 画像の端を除いて処理
+        for (let y = 1; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+                for (let c = 0; c < 3; c++) {
+                    let sum = 0;
+                    
+                    for (let ky = -1; ky <= 1; ky++) {
+                        for (let kx = -1; kx <= 1; kx++) {
+                            const idx = ((y + ky) * width + (x + kx)) * 4 + c;
+                            sum += tempData[idx] * kernel[(ky + 1) * 3 + kx + 1];
+                        }
+                    }
+                    
+                    const idx = (y * width + x) * 4 + c;
+                    data[idx] = Math.min(255, Math.max(0, sum));
+                }
+            }
+        }
+        
+        return imageData;
+    },
+    
+    // 適応的二値化処理（局所的な閾値を使用）
+    adaptiveThreshold(imageData, regionSize = 15, constant = 5) {
+        const width = imageData.width;
+        const height = imageData.height;
+        const data = imageData.data;
+        const grayscaleCopy = new Uint8Array(width * height);
+        
+        // グレースケール配列を作成
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const idx = (y * width + x) * 4;
+                grayscaleCopy[y * width + x] = data[idx];
+            }
+        }
+        
+        // 各ピクセルに対して局所的な閾値を計算して二値化
+        const halfRegion = Math.floor(regionSize / 2);
+        
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let sum = 0;
+                let count = 0;
+                
+                // 周辺領域の平均を計算（最適化のため、サンプリング間隔を設定）
+                const step = Math.max(1, Math.floor(regionSize / 5));
+                
+                for (let dy = -halfRegion; dy <= halfRegion; dy += step) {
+                    for (let dx = -halfRegion; dx <= halfRegion; dx += step) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        
+                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                            sum += grayscaleCopy[ny * width + nx];
+                            count++;
+                        }
+                    }
+                }
+                
+                // 局所平均を閾値に使用
+                const threshold = Math.floor(sum / count) - constant;
+                const idx = (y * width + x) * 4;
+                const value = grayscaleCopy[y * width + x] < threshold ? 0 : 255;
+                
+                data[idx] = data[idx + 1] = data[idx + 2] = value;
+            }
+        }
+        
+        return imageData;
+    },
+    
+    // すべての画像処理を適用するメイン関数
+    processImage(imageData) {
+        if (!this.imageProcessing.enabled) return imageData;
+        
+        // グレースケール変換は常に適用
+        this.toGrayscale(imageData);
+        
+        // コントラスト調整
+        if (this.imageProcessing.contrastFactor !== 1.0) {
+            this.adjustContrast(imageData, this.imageProcessing.contrastFactor);
+        }
+        
+        // シャープニング
+        if (this.imageProcessing.sharpeningEnabled) {
+            this.sharpen(imageData);
+        }
+        
+        // 適応的二値化
+        if (this.imageProcessing.thresholdEnabled) {
+            this.adaptiveThreshold(
+                imageData, 
+                this.imageProcessing.regionSize, 
+                this.imageProcessing.thresholdConstant
+            );
+        }
+        
+        return imageData;
+    },
+
+    // 設定の保存
+    saveProcessingSettings() {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('qr-image-processing', JSON.stringify(this.imageProcessing));
+        }
+    },
+    
+    // 設定のロード
+    loadProcessingSettings() {
+        if (typeof localStorage !== 'undefined') {
+            const settings = localStorage.getItem('qr-image-processing');
+            if (settings) {
+                try {
+                    this.imageProcessing = {...this.imageProcessing, ...JSON.parse(settings)};
+                } catch (error) {
+                    console.error('画像処理設定の読み込みエラー:', error);
+                }
+            }
+        }
+    },
+    
+    // 設定イベントの設定
+    setupProcessingSettings() {
+        // 設定UIの要素を取得
+        const enableProcessing = document.getElementById('enable-processing');
+        const contrastFactor = document.getElementById('contrast-factor');
+        const contrastValue = document.getElementById('contrast-value');
+        const enableSharpen = document.getElementById('enable-sharpen');
+        const enableThreshold = document.getElementById('enable-threshold');
+        const resetButton = document.getElementById('reset-processing');
+        
+        if (!enableProcessing) return; // 設定UIがない場合は終了
+        
+        // 現在の設定を反映
+        enableProcessing.checked = this.imageProcessing.enabled;
+        contrastFactor.value = this.imageProcessing.contrastFactor;
+        contrastValue.textContent = this.imageProcessing.contrastFactor;
+        enableSharpen.checked = this.imageProcessing.sharpeningEnabled;
+        enableThreshold.checked = this.imageProcessing.thresholdEnabled;
+        
+        // イベントリスナーの設定
+        enableProcessing.addEventListener('change', (e) => {
+            this.imageProcessing.enabled = e.target.checked;
+            this.saveProcessingSettings();
+        });
+        
+        contrastFactor.addEventListener('input', (e) => {
+            this.imageProcessing.contrastFactor = parseFloat(e.target.value);
+            contrastValue.textContent = e.target.value;
+            this.saveProcessingSettings();
+        });
+        
+        enableSharpen.addEventListener('change', (e) => {
+            this.imageProcessing.sharpeningEnabled = e.target.checked;
+            this.saveProcessingSettings();
+        });
+        
+        enableThreshold.addEventListener('change', (e) => {
+            this.imageProcessing.thresholdEnabled = e.target.checked;
+            this.saveProcessingSettings();
+        });
+        
+        resetButton.addEventListener('click', () => {
+            // デフォルト設定に戻す
+            this.imageProcessing = {
+                enabled: true,
+                contrastFactor: 1.4,
+                sharpeningEnabled: true,
+                thresholdEnabled: true,
+                regionSize: 15,
+                thresholdConstant: 5,
+                debug: false
+            };
+            
+            // UI更新
+            enableProcessing.checked = true;
+            contrastFactor.value = 1.4;
+            contrastValue.textContent = "1.4";
+            enableSharpen.checked = true;
+            enableThreshold.checked = true;
+            
+            this.saveProcessingSettings();
+        });
     }
 };
