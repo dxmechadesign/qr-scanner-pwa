@@ -227,9 +227,11 @@ const MultiQRScanner = {
         }
     },
     
-    // スキャン停止
+    // 既存のstopScanningメソッドを改善
     stopScanning() {
         if (!this.isScanning) return;
+        
+        console.log('複数QRスキャン停止');
         
         // インターバル停止
         if (this.scanInterval) {
@@ -254,61 +256,90 @@ const MultiQRScanner = {
             this.isScanning ? 'scanning' : 'stopped');
     },
     
-    // カメラ起動の改善
+    // カメラ起動 (改良版)
     async startCamera() {
         console.log('カメラ起動開始...');
         try {
             // すでにアクティブなストリームがある場合は停止
-            if (this.videoStream) {
-                this.stopCamera();
+            this.stopCamera();
+            
+            // グローバル変数がなければ初期化
+            if (!window.activeMediaStreams) {
+                window.activeMediaStreams = [];
             }
             
-            // まず低解像度で試行
-            const constraints = this.tryLowerResolution ? 
+            // 解像度レベルリスト (高→低の順)
+            const resolutionLevels = [
+                // レベル1: HD (高画質)
                 { 
                     video: { 
                         facingMode: 'environment',
                         width: { ideal: 1280 },
                         height: { ideal: 720 },
-                        frameRate: { ideal: 15 }
+                        frameRate: { ideal: 15, min: 10 }
                     } 
-                } : 
+                },
+                // レベル2: 中解像度
                 { 
                     video: { 
                         facingMode: 'environment',
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 },
-                        frameRate: { ideal: 30, min: 15 }
+                        width: { ideal: 800 },
+                        height: { ideal: 600 }
                     } 
-                };
+                },
+                // レベル3: 低解像度
+                { 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    } 
+                },
+                // レベル4: 最低限の設定
+                { 
+                    video: true
+                }
+            ];
             
-            console.log('カメラ要求パラメータ:', constraints);
+            // 各解像度レベルを順番に試行
+            let stream = null;
+            let lastError = null;
             
-            try {
-                this.videoStream = await navigator.mediaDevices.getUserMedia(constraints);
-                // 成功したらフラグをリセット
-                this.tryLowerResolution = false;
-            } catch (error) {
-                // 高解像度で失敗した場合、低解像度で再試行
-                if (!this.tryLowerResolution) {
-                    console.log('高解像度カメラアクセスに失敗、低解像度で再試行します');
-                    this.tryLowerResolution = true;
-                    return this.startCamera(); // 再帰的に呼び出し
-                } else {
-                    // それでも失敗した場合は最低限の設定で試行
-                    console.log('低解像度でも失敗、最低限の設定で試行します');
-                    this.videoStream = await navigator.mediaDevices.getUserMedia({
-                        video: true // 最低限の設定
-                    });
+            for (let i = 0; i < resolutionLevels.length; i++) {
+                const constraints = resolutionLevels[i];
+                console.log(`カメラ解像度レベル${i+1}を試行:`, constraints);
+                
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    console.log(`カメラ解像度レベル${i+1}で成功しました`);
+                    break; // 成功したらループを抜ける
+                } catch (error) {
+                    lastError = error;
+                    console.warn(`カメラ解像度レベル${i+1}で失敗:`, error.name);
+                    // 最後のレベルでなければ続行
+                    if (i < resolutionLevels.length - 1) {
+                        console.log('次の解像度レベルを試行します...');
+                        // 少し待機してからリトライ
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    }
                 }
             }
             
-            console.log('カメラストリーム取得成功:', this.videoStream);
-            this.videoElement.srcObject = this.videoStream;
+            // すべての解像度レベルで失敗した場合
+            if (!stream) {
+                throw lastError || new Error('すべての解像度設定でカメラの起動に失敗しました');
+            }
+            
+            // グローバル変数に追加して管理
+            window.activeMediaStreams.push(stream);
+            
+            // ストリームをセット
+            this.videoStream = stream;
+            this.videoElement.srcObject = stream;
             console.log('ビデオ要素にストリームをセット');
             
             // ビデオ再生開始
-            return new Promise((resolve) => {
+            return new Promise((resolve, reject) => {
                 this.videoElement.onloadedmetadata = () => {
                     console.log('ビデオメタデータ読み込み完了');
                     this.videoElement.play()
@@ -318,32 +349,38 @@ const MultiQRScanner = {
                             this.canvasElement.width = this.videoElement.videoWidth;
                             this.canvasElement.height = this.videoElement.videoHeight;
                             console.log(`ビデオサイズ: ${this.canvasElement.width}x${this.canvasElement.height}`);
+                            this.updateStatus('スキャン中...', 'scanning');
                             resolve();
                         })
                         .catch(error => {
                             console.error("ビデオ再生エラー:", error);
-                            resolve(); // エラーでも続行
+                            this.updateStatus('ビデオ再生エラー', 'error');
+                            reject(error);
                         });
                 };
                 
                 // タイムアウト設定
                 setTimeout(() => {
                     if (this.videoElement.readyState < 2) { // HAVE_CURRENT_DATA未満
-                        console.warn('ビデオメタデータのロードが遅延しています');
-                        resolve(); // タイムアウトでも続行
+                        const timeoutError = new Error('ビデオメタデータのロードがタイムアウトしました');
+                        console.warn(timeoutError);
+                        this.updateStatus('カメラ接続タイムアウト', 'error');
+                        reject(timeoutError);
                     }
-                }, 3000);
+                }, 5000);
             });
         } catch (error) {
             console.error("カメラ起動エラー:", error);
             
-            // より詳細なエラーメッセージ
+            // より明確なエラーメッセージ
             if (error.name === 'NotAllowedError') {
                 this.updateStatus('カメラへのアクセスが拒否されました', 'error');
             } else if (error.name === 'NotFoundError') {
                 this.updateStatus('カメラが見つかりません', 'error');
             } else if (error.name === 'NotReadableError') {
                 this.updateStatus('カメラが他のアプリで使用中', 'error');
+            } else if (error.name === 'OverconstrainedError') {
+                this.updateStatus('要求した解像度はサポートされていません', 'error');
             } else {
                 this.updateStatus('カメラアクセスエラー: ' + error.name, 'error');
             }
@@ -351,16 +388,28 @@ const MultiQRScanner = {
             throw error;
         }
     },
-    
-    // カメラ停止
+
+    // カメラ停止の改善
     stopCamera() {
         if (this.videoStream) {
-            this.videoStream.getTracks().forEach(track => track.stop());
+            console.log('カメラストリームを停止します');
+            this.videoStream.getTracks().forEach(track => {
+                track.stop();
+                console.log('トラック停止:', track.kind);
+            });
+            
+            // グローバル変数からも削除
+            if (window.activeMediaStreams) {
+                window.activeMediaStreams = window.activeMediaStreams.filter(
+                    stream => stream !== this.videoStream
+                );
+            }
+            
             this.videoElement.srcObject = null;
             this.videoStream = null;
         }
     },
-    
+       
     // ビデオフレームをスキャン
     async scanVideoFrame() {
         if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {

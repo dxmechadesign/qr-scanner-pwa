@@ -225,7 +225,11 @@ const App = {
         // ナビゲーション
         Object.keys(this.elements.navButtons).forEach(key => {
             this.elements.navButtons[key].addEventListener('click', () => {
-                this.handleNavigation(key);
+                // カメラを完全に停止してから切り替え
+                stopAllMediaTracks(); // 新しく追加した関数を呼び出し
+                setTimeout(() => {
+                    this.handleNavigation(key);
+                }, 300); // 300ms待機してからナビゲーション処理を実行
             });
         });
     },
@@ -429,104 +433,118 @@ const App = {
         }
     },
 
+    // 現在アクティブなすべてのメディアストリームを停止
+    stopAllMediaTracks() {
+        console.log('すべてのメディアトラックを停止します');
+        
+        if (window.activeMediaStreams) {
+            window.activeMediaStreams.forEach(stream => {
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log('メディアトラック停止:', track.kind);
+                });
+            });
+            window.activeMediaStreams = [];
+        }
+        
+        // QRスキャナーとMultiQRScannerのカメラも停止
+        if (typeof QRScanner !== 'undefined' && QRScanner.stop) {
+            QRScanner.stop();
+        }
+        
+        if (typeof MultiQRScanner !== 'undefined' && MultiQRScanner.stopScanning) {
+            MultiQRScanner.stopScanning();
+        }
+    },
+
     // ナビゲーション処理
     handleNavigation(target) {
-        // アクティブなナビゲーションボタンの更新
-        Object.keys(this.elements.navButtons).forEach(key => {
-            if (this.elements.navButtons[key]) {
-                this.elements.navButtons[key].classList.remove('active');
+        // すべてのカメラストリームを停止（これを追加）
+        this.stopAllMediaTracks();
+        
+        // 少し遅延を入れる（これを追加）
+        setTimeout(() => {
+            // アクティブなナビゲーションボタンの更新
+            Object.keys(this.elements.navButtons).forEach(key => {
+                if (this.elements.navButtons[key]) {
+                    this.elements.navButtons[key].classList.remove('active');
+                }
+            });
+            
+            if (this.elements.navButtons[target]) {
+                this.elements.navButtons[target].classList.add('active');
             }
-        });
-        
-        if (this.elements.navButtons[target]) {
-            this.elements.navButtons[target].classList.add('active');
-        }
-        
-        // すべてのビューを非表示
-        document.querySelectorAll('.view-container').forEach(container => {
-            if (container) {
-                container.style.display = 'none';
-            }
-        });
-        
-        // 対象のビューを表示
-        switch (target) {
-            case 'scan':
-                // 通常のスキャンビュー
-                const scannerContainer = document.getElementById('scanner-container');
-                if (scannerContainer) {
-                    scannerContainer.style.display = 'block';
+            
+            // すべてのビューを非表示
+            document.querySelectorAll('.view-container').forEach(container => {
+                if (container) {
+                    container.style.display = 'none';
                 }
-                // 他のモードを停止
-                if (typeof MultiQRScanner !== 'undefined') {
-                    MultiQRScanner.stopCamera();
-                }
-                break;
-                
-            case 'multiScan':
-                console.log('複数スキャンモードに切り替えます');
-                // 複数スキャンビュー
-                const multiScanContainer = document.getElementById('multi-qr-container');
-                console.log('multi-qr-container要素:', multiScanContainer);
-                
-                if (multiScanContainer) {
-                    multiScanContainer.style.display = 'block';
-                    console.log('複数スキャンビューを表示しました');
-                } else {
-                    console.error('multi-qr-container要素が見つかりません');
-                }
-                
-                // 通常スキャナーを停止
-                QRScanner.stop();
-                
-                // 複数スキャンモード開始
-                if (typeof MultiQRScanner !== 'undefined') {
-                    console.log('MultiQRScannerが定義されています');
-                    if (typeof MultiQRScanner.showMultiScanView === 'function') {
-                        console.log('showMultiScanViewメソッドを呼び出します');
-                        MultiQRScanner.showMultiScanView();
-                    } else {
-                        console.error('showMultiScanViewメソッドが定義されていません');
+            });
+            
+            // 対象のビューを表示
+            switch (target) {
+                case 'scan':
+                    // 通常のスキャンビュー
+                    const scannerContainer = document.getElementById('scanner-container');
+                    if (scannerContainer) {
+                        scannerContainer.style.display = 'block';
                     }
-                } else {
-                    console.error('MultiQRScannerが定義されていません');
-                }
-                break;
-                
-            case 'history':
-                // 履歴ビュー
-                const historyContainer = document.getElementById('history-container');
-                if (historyContainer) {
-                    historyContainer.style.display = 'block';
-                }
-                // スキャナーを停止
-                QRScanner.stop();
-                if (typeof MultiQRScanner !== 'undefined') {
-                    MultiQRScanner.stopCamera();
-                }
-                break;
-                
-            case 'settings':
-                // 設定ビュー
-                const settingsContainer = document.getElementById('settings-container');
-                if (settingsContainer) {
-                    settingsContainer.style.display = 'block';
-                }
-                // スキャナーを停止
-                QRScanner.stop();
-                if (typeof MultiQRScanner !== 'undefined') {
-                    MultiQRScanner.stopCamera();
-                }
-                break;
-                
-            default:
-                // デフォルトはスキャンビュー
-                const defaultContainer = document.getElementById('scanner-container');
-                if (defaultContainer) {
-                    defaultContainer.style.display = 'block';
-                }
-                break;
-        }
+                    break;
+                    
+                case 'multiScan':
+                    console.log('複数スキャンモードに切り替えます');
+                    // 複数スキャンビュー
+                    const multiScanContainer = document.getElementById('multi-qr-container');
+                    console.log('multi-qr-container要素:', multiScanContainer);
+                    
+                    if (multiScanContainer) {
+                        multiScanContainer.style.display = 'block';
+                        console.log('複数スキャンビューを表示しました');
+                    } else {
+                        console.error('multi-qr-container要素が見つかりません');
+                    }
+                    
+                    // 複数スキャンモード開始
+                    if (typeof MultiQRScanner !== 'undefined') {
+                        console.log('MultiQRScannerが定義されています');
+                        if (typeof MultiQRScanner.showMultiScanView === 'function') {
+                            console.log('showMultiScanViewメソッドを呼び出します');
+                            MultiQRScanner.showMultiScanView();
+                        } else {
+                            console.error('showMultiScanViewメソッドが定義されていません');
+                        }
+                    } else {
+                        console.error('MultiQRScannerが定義されていません');
+                    }
+                    break;
+                    
+                // 以下、既存のケース文を維持
+                case 'history':
+                    // 履歴ビュー
+                    const historyContainer = document.getElementById('history-container');
+                    if (historyContainer) {
+                        historyContainer.style.display = 'block';
+                    }
+                    break;
+                    
+                case 'settings':
+                    // 設定ビュー
+                    const settingsContainer = document.getElementById('settings-container');
+                    if (settingsContainer) {
+                        settingsContainer.style.display = 'block';
+                    }
+                    break;
+                    
+                default:
+                    // デフォルトはスキャンビュー
+                    const defaultContainer = document.getElementById('scanner-container');
+                    if (defaultContainer) {
+                        defaultContainer.style.display = 'block';
+                    }
+                    break;
+            }
+        }, 300); // 300ms遅延を追加
     },
 
     // トースト通知の表示
