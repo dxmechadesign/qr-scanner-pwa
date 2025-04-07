@@ -80,6 +80,7 @@
                 <div class="scan-controls">
                     <button id="start-multi-scan" class="primary-button">スキャン開始</button>
                     <button id="stop-multi-scan" class="secondary-button" disabled>停止</button>
+                    <button id="refresh-camera" class="secondary-button">カメラをリフレッシュ</button>
                 </div>
                 
                 <div class="results-section">
@@ -129,6 +130,101 @@
         </button>
     </nav>
 
+    <!-- グローバルなカメラリソース管理 -->
+    <script>
+    // グローバルなカメラストリーム管理
+    window.activeMediaStreams = [];
+
+    // アプリケーション全体のカメラリソース解放
+    window.releaseAllCameras = function() {
+        console.log('すべてのカメラリソースを解放します');
+        
+        // メディアトラックの停止
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            if (window.activeMediaStreams) {
+                window.activeMediaStreams.forEach(stream => {
+                    if (stream && stream.getTracks) {
+                        stream.getTracks().forEach(track => {
+                            track.stop();
+                            console.log('メディアトラック停止:', track.kind);
+                        });
+                    }
+                });
+                window.activeMediaStreams = [];
+            }
+        }
+        
+        // すべてのビデオ要素のソースをクリア
+        document.querySelectorAll('video').forEach(video => {
+            if (video.srcObject) {
+                video.srcObject = null;
+                console.log('ビデオソースをクリア:', video.id);
+            }
+        });
+        
+        return new Promise(resolve => setTimeout(resolve, 500));
+    };
+
+    // ブラウザ検出と特定ブラウザ向けの対策を表示
+    function detectBrowserAndShowHelp() {
+        const userAgent = navigator.userAgent;
+        let browserInfo = '';
+        
+        if (userAgent.includes('Chrome')) {
+            browserInfo = 'Chrome/Chromiumベースのブラウザ';
+            // Chrome特有のアドバイス
+            return `
+                <div class="browser-help">
+                    <p>Chromeでカメラにアクセスできない場合:</p>
+                    <ol>
+                        <li>アドレスバーの左側にあるカメラアイコンをクリックして、権限を確認してください</li>
+                        <li>他のタブやアプリがカメラを使用していないことを確認してください</li>
+                        <li>ページを再読み込みするか、ブラウザを再起動してみてください</li>
+                    </ol>
+                </div>
+            `;
+        } else if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
+            browserInfo = 'Safari';
+            // Safari特有のアドバイス
+            return `
+                <div class="browser-help">
+                    <p>Safariでカメラにアクセスできない場合:</p>
+                    <ol>
+                        <li>「設定」→「Safari」→「カメラ」で権限を確認してください</li>
+                        <li>他のタブがカメラを使用していないことを確認してください</li>
+                        <li>デバイスを再起動してみてください</li>
+                    </ol>
+                </div>
+            `;
+        } else if (userAgent.includes('Firefox')) {
+            browserInfo = 'Firefox';
+            // Firefox特有のアドバイス
+            return `
+                <div class="browser-help">
+                    <p>Firefoxでカメラにアクセスできない場合:</p>
+                    <ol>
+                        <li>アドレスバーの左側にあるカメラアイコンをクリックして、権限を確認してください</li>
+                        <li>about:permissions にアクセスして、このサイトの権限を確認してください</li>
+                        <li>他のアプリがカメラを使用していないことを確認してください</li>
+                    </ol>
+                </div>
+            `;
+        }
+        
+        // 一般的なアドバイス
+        return `
+            <div class="browser-help">
+                <p>カメラにアクセスできない場合:</p>
+                <ol>
+                    <li>ブラウザの設定でカメラへのアクセス許可を確認してください</li>
+                    <li>他のアプリがカメラを使用していないことを確認してください</li>
+                    <li>デバイスを再起動してみてください</li>
+                </ol>
+            </div>
+        `;
+    }
+    </script>
+
     <!-- スクリプト -->
     <!-- ZXingライブラリを読み込む (最新バージョン) -->
     <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
@@ -138,52 +234,29 @@
     <script src="js/multi-qr-scanner.js"></script>
     
     <script>
-        // Service Workerの登録
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js')
-                    .then(reg => console.log('Service Worker registered:', reg))
-                    .catch(err => console.log('Service Worker registration failed:', err));
-            });
-        }
-    </script>
-
-    <script>
-        // グローバルなカメラストリーム管理
-        window.activeMediaStreams = [];
-        
-        // アプリケーション全体のカメラリソース解放
-        window.releaseAllCameras = function() {
-            console.log('すべてのカメラリソースを解放します');
-            
-            // メディアトラックの停止
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                if (window.activeMediaStreams) {
-                    window.activeMediaStreams.forEach(stream => {
-                        if (stream && stream.getTracks) {
-                            stream.getTracks().forEach(track => {
-                                track.stop();
-                                console.log('メディアトラック停止:', track.kind);
-                            });
-                        }
-                    });
-                    window.activeMediaStreams = [];
+        // カメラリフレッシュボタンのイベント
+        document.getElementById('refresh-camera')?.addEventListener('click', async function() {
+            if (window.releaseAllCameras) {
+                await window.releaseAllCameras();
+                
+                // すべてのページキャッシュをクリア（強制的にリフレッシュ）
+                if ('caches' in window) {
+                    try {
+                        const cacheNames = await caches.keys();
+                        await Promise.all(
+                            cacheNames.map(cacheName => caches.delete(cacheName))
+                        );
+                        console.log('キャッシュをクリアしました');
+                    } catch (e) {
+                        console.error('キャッシュクリアエラー:', e);
+                    }
                 }
+                
+                // ページをリロード
+                window.location.reload();
             }
-            
-            // すべてのビデオ要素のソースをクリア
-            document.querySelectorAll('video').forEach(video => {
-                if (video.srcObject) {
-                    video.srcObject = null;
-                    console.log('ビデオソースをクリア:', video.id);
-                }
-            });
-            
-            return new Promise(resolve => setTimeout(resolve, 500));
-        };
-    </script>
+        });
 
-    <script>
         // ページ読み込み時にカメラリソースを初期化
         document.addEventListener('DOMContentLoaded', async () => {
             // カメラアクセス許可を事前に取得
@@ -196,8 +269,70 @@
                 console.log('カメラ許可を確認しました');
             } catch (error) {
                 console.warn('カメラ許可の事前確認に失敗:', error);
+                
+                // エラーメッセージをページに表示
+                const errorMessage = document.createElement('div');
+                errorMessage.className = 'camera-error-message';
+                errorMessage.innerHTML = `
+                    <div class="error-banner">
+                        <p><strong>カメラへのアクセスができません</strong></p>
+                        <p>${error.message || 'カメラの権限が必要です'}</p>
+                    </div>
+                    ${detectBrowserAndShowHelp()}
+                `;
+                
+                // スタイルを追加
+                const style = document.createElement('style');
+                style.textContent = `
+                    .camera-error-message {
+                        position: fixed;
+                        top: 60px;
+                        left: 0;
+                        right: 0;
+                        padding: 10px;
+                        background-color: rgba(255, 255, 255, 0.9);
+                        z-index: 1000;
+                        text-align: center;
+                    }
+                    .error-banner {
+                        background-color: #ffecec;
+                        color: #d8000c;
+                        padding: 10px;
+                        margin-bottom: 10px;
+                        border-radius: 4px;
+                    }
+                    .browser-help {
+                        background-color: #e8f4f8;
+                        padding: 10px;
+                        border-radius: 4px;
+                        text-align: left;
+                    }
+                    .browser-help ol {
+                        margin-left: 20px;
+                        padding-left: 0;
+                    }
+                    .browser-help li {
+                        margin-bottom: 5px;
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                // メインコンテンツの前に挿入
+                const main = document.querySelector('main');
+                if (main) {
+                    main.parentNode.insertBefore(errorMessage, main);
+                }
             }
         });
+        
+        // Service Workerの登録
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(reg => console.log('Service Worker registered:', reg))
+                    .catch(err => console.log('Service Worker registration failed:', err));
+            });
+        }
     </script>
 </body>
 </html>
