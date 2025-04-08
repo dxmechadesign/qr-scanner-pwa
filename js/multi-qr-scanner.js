@@ -867,6 +867,104 @@ const MultiQRScanner = {
         return Math.min(1, Math.max(0, confidence));
     },
 
+    // 検出ステータスを更新
+    updateStatus(message, statusType = 'info') {
+        if (!this.statusElement) {
+            this.statusElement = document.getElementById('detection-status');
+        }
+        
+        if (this.statusElement) {
+            // 前の状態クラスをすべて削除
+            this.statusElement.classList.remove('scanning', 'success', 'warning', 'error', 'processing', 'stopped');
+            
+            // 現在の状態クラスを追加
+            if (statusType) {
+                this.statusElement.classList.add(statusType);
+            }
+            
+            // メッセージを設定
+            this.statusElement.textContent = message;
+        }
+    },
+    
+    // 検出音を再生
+    playBeepSound() {
+        try {
+            // サウンドエフェクトのAudio要素がなければ作成
+            if (!this.beepSound) {
+                this.beepSound = new Audio();
+                // Base64でエンコードされた短いビープ音
+                this.beepSound.src = 'data:audio/mp3;base64,SUQzAwAAAAAAJlRQRTEAAAAcAAAAU291bmRKYXkuY29tIFNvdW5kIEVmZmVjdHMA//uSwAAAAAABLBQAAAL6QWtva3MDAAAA/1RSSE8AAABHAAAATWF1c8OtIHlvdXJzZWxmAAAARVhUAAAAGgAAAFNvdW5kSmF5LmNvbSBTb3VuZCBFZmZlY3Rz//tQxAADsn0+Z80EABPEQKF7BgAHAAADTEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVX/+1LEAQP3+nFj2CAAErSqnTnHgAHVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV';
+                this.beepSound.volume = 0.5;
+            }
+            
+            // 音を再生
+            this.beepSound.currentTime = 0;
+            this.beepSound.play().catch(error => {
+                console.warn('ビープ音の再生に失敗:', error);
+            });
+        } catch (error) {
+            console.warn('ビープ音の初期化に失敗:', error);
+        }
+    },
+    
+    // 検出結果のUIを更新
+    updateResultsUI() {
+        if (!this.resultsList) {
+            this.resultsList = document.getElementById('detected-codes-list');
+            if (!this.resultsList) {
+                console.error('検出結果リスト要素が見つかりません');
+                return;
+            }
+        }
+        
+        // リストをクリア
+        this.resultsList.innerHTML = '';
+        
+        // 検出されたQRコードがない場合
+        if (this.detectedCodes.length === 0) {
+            const emptyMessage = document.createElement('p');
+            emptyMessage.className = 'empty-message';
+            emptyMessage.textContent = 'QRコードが検出されていません';
+            this.resultsList.appendChild(emptyMessage);
+            return;
+        }
+        
+        // 検出されたQRコードをリスト表示
+        this.detectedCodes.forEach((code, index) => {
+            const listItem = document.createElement('div');
+            listItem.className = 'detected-code-item';
+            
+            // データ表示用の要素
+            const dataElement = document.createElement('div');
+            dataElement.className = 'code-data';
+            dataElement.textContent = code.data;
+            
+            // 検出時刻の表示
+            const timestamp = code.timestamp ? new Date(code.timestamp) : new Date();
+            const timeElement = document.createElement('div');
+            timeElement.className = 'code-time';
+            timeElement.textContent = timestamp.toLocaleTimeString();
+            
+            // 削除ボタン
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'code-delete';
+            deleteButton.textContent = '✕';
+            deleteButton.dataset.index = index;
+            deleteButton.addEventListener('click', (e) => {
+                const idx = parseInt(e.target.dataset.index);
+                this.detectedCodes.splice(idx, 1);
+                this.updateResultsUI();
+            });
+            
+            // 要素の組み立て
+            listItem.appendChild(dataElement);
+            listItem.appendChild(timeElement);
+            listItem.appendChild(deleteButton);
+            this.resultsList.appendChild(listItem);
+        });
+    },
+    
     // フレーム履歴を更新
     updateHistory: function(result) {
         if (!result || !result.data) {
@@ -974,9 +1072,12 @@ const MultiQRScanner = {
             return;
         }
         
-        // キャンバス要素の確認
+        // キャンバス要素の確認と初期化
         this.canvasElement = document.createElement('canvas');
         this.canvasContext = this.canvasElement.getContext('2d', { willReadFrequently: true });
+        
+        // スキャン領域の初期化
+        this.initializeScanAreas();
         
         // 結果リストの確認
         this.resultsList = document.getElementById('detected-codes-list');

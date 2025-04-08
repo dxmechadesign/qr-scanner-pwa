@@ -30,6 +30,14 @@ const App = {
                 settings: document.getElementById('nav-settings')
             }
         };
+        
+        // ビューのIDマッピング
+        this.viewContainers = {
+            scan: 'scanner-container',
+            multiScan: 'multi-qr-container',
+            history: 'history-container',
+            settings: 'settings-container'
+        };
 
         // イベントリスナーを設定
         this.setupEventListeners();
@@ -495,11 +503,14 @@ const App = {
             container.style.display = 'none';
         });
         
+        // ビューコンテナのIDを取得（マッピングがあればそれを使用、なければデフォルトの命名規則）
+        const containerId = this.viewContainers[view] || `${view}-container`;
+        
         // 選択されたビューを表示
-        const targetView = document.getElementById(`${view}-container`);
+        const targetView = document.getElementById(containerId);
         if (targetView) {
             targetView.style.display = 'block';
-            console.log(`${view}-container要素:`, targetView);
+            console.log(`${view}ビュー要素(${containerId}):`, targetView);
             
             if (view === 'multiScan') {
                 console.log('複数スキャンビューを表示します');
@@ -516,7 +527,7 @@ const App = {
                 }
             }
         } else {
-            console.error(`${view}-container要素が見つかりません`);
+            console.error(`${view}ビューのコンテナ(${containerId})が見つかりません`);
         }
     },
 
