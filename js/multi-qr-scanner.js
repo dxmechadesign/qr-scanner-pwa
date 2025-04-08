@@ -513,216 +513,132 @@ const MultiQRScanner = {
        
     // ビデオフレームをスキャン
     async scanVideoFrame() {
+        // 処理中なら終了
+        if (this.isProcessing) {
+            return;
+        }
+
+        // 最後の検出から100ms以内なら処理をスキップ
+        const currentTime = Date.now();
+        if (currentTime - this.lastProcessingTime < 50) {
+            return;
+        }
+
         if (!this.isScanning || !this.videoElement || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
             return;
         }
 
+        this.isProcessing = true;
+        this.lastProcessingTime = currentTime;
+
         try {
-            // 現在時刻を取得
-            const now = Date.now();
-            
-            // 前回の検出から200ms以内なら処理をスキップ（より高速に）
-            if (now - this.lastDetection < 200) {
-                return;
-            }
-
-            // ビデオフレームをキャンバスに描画
-            this.canvasContext.drawImage(
-                this.videoElement, 
-                0, 0, 
-                this.canvasElement.width, 
-                this.canvasElement.height
-            );
-            
-            // 画像処理の開始時間を記録
-            const startTime = performance.now();
-            
-            // 画像データを取得
-            const imageData = this.canvasContext.getImageData(
-                0, 0, 
-                this.canvasElement.width, 
-                this.canvasElement.height
-            );
-
-            // 画像処理を適用
-            const processedImageData = this.processImage(imageData);
-            
-            // 処理後の画像をキャンバスに戻す
-            this.canvasContext.putImageData(processedImageData, 0, 0);
-            
-            // 処理時間を計測
-            const processingTime = performance.now() - startTime;
-            console.log(`画像処理時間: ${processingTime.toFixed(2)}ms`);
-
+            // 一時的なフラグ
             let detected = false;
-            const allResults = [];
 
-            // スキャン領域ごとに処理
-            if (!this.scanAreas) {
-                this.initializeScanAreas();
-            }
-
-            // まずはjsQRでの検出を試みる
-            for (const area of this.scanAreas) {
-                const areaImageData = this.canvasContext.getImageData(
-                    area.x, area.y, area.width, area.height
-                );
-
-                if (typeof jsQR === 'function') {
-                    try {
-                        const code = jsQR(
-                            areaImageData.data,
-                            areaImageData.width,
-                            areaImageData.height,
-                            {
-                                inversionAttempts: "dontInvert"
-                            }
-                        );
-                        
-                        if (code) {
-                            console.log('jsQRで検出:', code.data);
-                            allResults.push({
-                                data: code.data,
-                                location: {
-                                    top: area.y + code.location.topLeft.y,
-                                    left: area.x + code.location.topLeft.x,
-                                    width: code.location.bottomRight.x - code.location.topLeft.x,
-                                    height: code.location.bottomRight.y - code.location.topLeft.y
-                                }
-                            });
-                            detected = true;
-                            // 1つ見つかったらすぐに処理
-                            break;
-                        }
-                    } catch (jsQRError) {
-                        // エラーは抑制
-                    }
+            // キャンバスにビデオフレームを描画
+            this.canvasElement.width = this.videoElement.videoWidth;
+            this.canvasElement.height = this.videoElement.videoHeight;
+            this.canvasContext.drawImage(this.videoElement, 0, 0, this.canvasElement.width, this.canvasElement.height);
+            
+            // キャンバスデータを取得
+            const imageData = this.canvasContext.getImageData(0, 0, this.canvasElement.width, this.canvasElement.height);
+            
+            // まずjsQRで試みる（高速）
+            const jsQRResult = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "dontInvert"
+            });
+            
+            if (jsQRResult) {
+                // jsQRでコードが検出された場合
+                console.log("jsQRでQRコードを検出:", jsQRResult.data);
+                // 重複チェック
+                if (!this.isDetectedCode(jsQRResult.data)) {
+                    this.addDetectedCode(jsQRResult.data);
+                    detected = true;
+                } else {
+                    console.log("重複コード検出（jsQR）", jsQRResult.data);
+                    // 重複でも最後の検出時間は更新
+                    this.lastDetection = Date.now();
                 }
             }
-
-            // jsQRで検出されなかった場合のみZXingを試す
+            
+            // jsQRで検出できなかった場合、ZXingを使用
             if (!detected && this.reader) {
                 try {
-                    // ZXingが利用可能なメソッドを確認
-                    if (typeof this.reader.decodeFromImage === 'function') {
-                        // データURLに変換（より低い品質で速度を優先）
-                        const dataURL = this.canvasElement.toDataURL('image/jpeg', 0.5);
-                        
-                        // 画像要素を作成
-                        const img = new Image();
-                        img.src = dataURL;
-                        
-                        // 画像の読み込みを待つ（短いタイムアウト）
-                        await Promise.race([
-                            new Promise(resolve => { img.onload = resolve; }),
-                            new Promise(resolve => setTimeout(resolve, 500))
-                        ]);
-                        
-                        if (img.complete) {
-                            // ZXingで検出
-                            const result = await this.reader.decodeFromImage(img);
-                            if (result) {
-                                const codeData = result.text || (typeof result.getText === 'function' ? result.getText() : String(result));
-                                console.log('ZXingで検出:', codeData);
-                                
-                                allResults.push({
-                                    data: codeData,
-                                    location: {
-                                        top: 0,
-                                        left: 0,
-                                        width: this.canvasElement.width,
-                                        height: this.canvasElement.height
-                                    }
-                                });
-                                detected = true;
-                            }
-                        }
-                    } else if (typeof this.reader.decode === 'function') {
-                        // 古いAPIの場合
-                        try {
-                            const bitmap = this.createBitmapFromImageData(imageData);
-                            const result = this.reader.decode(bitmap);
-                            if (result) {
-                                const codeData = result.text || (typeof result.getText === 'function' ? result.getText() : String(result));
-                                console.log('ZXing(decode)で検出:', codeData);
-                                
-                                allResults.push({
-                                    data: codeData,
-                                    location: {
-                                        top: 0,
-                                        left: 0,
-                                        width: this.canvasElement.width,
-                                        height: this.canvasElement.height
-                                    }
-                                });
-                                detected = true;
-                            }
-                        } catch (decodeError) {
-                            // 無視
+                    // パフォーマンス改善: imageDataを直接使用
+                    const result = await this.decodeWithZXing(imageData);
+                    
+                    if (result && result.length > 0) {
+                        console.log("ZXingでQRコードを検出:", result[0].text);
+                        if (!this.isDetectedCode(result[0].text)) {
+                            this.addDetectedCode(result[0].text);
+                        } else {
+                            console.log("重複コード検出（ZXing）", result[0].text);
+                            // 重複でも最後の検出時間は更新
+                            this.lastDetection = Date.now();
                         }
                     }
-                } catch (zxingError) {
-                    // エラーは抑制（jsQRで十分な場合が多い）
+                } catch (error) {
+                    // ZXingエラーは静かに処理（jsQRが既に試行済み）
+                    console.debug("ZXing検出エラー:", error.message);
                 }
             }
-
-            // 検出結果の統合と信頼度評価
-            if (allResults.length > 0) {
-                const mergedResults = this.mergeResults(allResults);
-                
-                // 新しいコードの検出
-                mergedResults.forEach(result => {
-                    const isDuplicate = this.detectedCodes.some(item => item.data === result.data);
-                    if (!isDuplicate) {
-                        this.detectedCodes.push({
-                            id: Date.now() + Math.random().toString(36).substring(2, 9),
-                            data: result.data,
-                            format: 'QR_CODE',
-                            timestamp: new Date().toISOString()
-                        });
-                        
-                        this.lastDetection = now;
-                        this.playBeepSound();
-                        this.updateResultsUI();
-                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                    }
-                });
-            }
         } catch (error) {
-            console.error('スキャン処理エラー:', error);
+            console.error("スキャン処理中にエラーが発生しました:", error);
+        } finally {
+            this.isProcessing = false;
         }
     },
 
-    // ImageDataからBitmapを作成（ZXingの古いバージョン用）
-    createBitmapFromImageData(imageData) {
-        if (typeof window.ZXing === 'undefined' || !window.ZXing.BitMatrix) {
-            return null;
+    // ZXingを使用してデコード（最適化版）
+    async decodeWithZXing(imageData) {
+        if (!this.reader) {
+            throw new Error("ZXingリーダーが初期化されていません");
         }
         
         try {
-            const ZXing = window.ZXing;
-            const width = imageData.width;
-            const height = imageData.height;
-            const bitMatrix = new ZXing.BitMatrix(width, height);
-            
-            // グレースケール化して閾値処理
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const idx = (y * width + x) * 4;
-                    // グレースケール値を計算（RGB平均）
-                    const gray = (imageData.data[idx] + imageData.data[idx + 1] + imageData.data[idx + 2]) / 3;
-                    // 閾値処理（128より小さい場合は黒、それ以外は白）
-                    if (gray < 128) {
-                        bitMatrix.set(x, y);
-                    }
-                }
+            // ZXing直接デコード（最適化版）
+            if (typeof this.reader.decodeFromImageData === 'function') {
+                return this.reader.decodeFromImageData(imageData);
+            } else {
+                // 従来のデコード方法
+                const dataUrl = this.imageDataToDataURL(imageData);
+                const img = new Image();
+                
+                return new Promise((resolve, reject) => {
+                    img.onload = () => {
+                        try {
+                            // 読み取り実行
+                            if (typeof this.reader.decodeFromImage === 'function') {
+                                const result = this.reader.decodeFromImage(img);
+                                resolve(result);
+                            } else if (typeof this.reader.decode === 'function') {
+                                const result = this.reader.decode(img);
+                                resolve([{ text: result.text, format: result.format }]);
+                            } else {
+                                reject(new Error("互換性のあるZXingデコード方法がありません"));
+                            }
+                        } catch (e) {
+                            reject(e);
+                        }
+                    };
+                    img.onerror = () => reject(new Error("画像読み込みエラー"));
+                    img.src = dataUrl;
+                });
             }
-            
-            return bitMatrix;
-        } catch (error) {
-            console.error('BitMatrix作成エラー:', error);
-            return null;
+        } catch (e) {
+            throw e;
         }
+    },
+    
+    // ImageDataをDataURLに変換
+    imageDataToDataURL(imageData) {
+        const canvas = document.createElement('canvas');
+        canvas.width = imageData.width;
+        canvas.height = imageData.height;
+        const ctx = canvas.getContext('2d');
+        ctx.putImageData(imageData, 0, 0);
+        return canvas.toDataURL('image/png');
     },
 
     // 画像処理メソッド
@@ -821,34 +737,48 @@ const MultiQRScanner = {
         console.log('スキャン領域を初期化しました:', this.scanAreas);
     },
 
-    // 検出結果を統合
-    mergeResults: function(results) {
-        if (!results || results.length === 0) {
-            return [];
-        }
-
-        const mergedResults = new Map();
-        const confidenceThreshold = 0.7;
-
-        results.forEach(result => {
-            if (!result || !result.data) {
-                return;
-            }
-
-            const confidence = this.calculateConfidence(result);
-            if (confidence >= confidenceThreshold) {
-                if (!mergedResults.has(result.data) || 
-                    mergedResults.get(result.data).confidence < confidence) {
-                    mergedResults.set(result.data, {
-                        data: result.data,
-                        confidence: confidence,
-                        location: result.location
-                    });
+    // 検出結果をマージし、信頼度に基づいてフィルタリング
+    mergeResults(results) {
+        console.log(`mergeResults: ${results.length}個の候補を処理`);
+        // 結果が重複しないように確保
+        const uniqueData = new Map();
+        
+        // 各結果を処理
+        results.forEach((result, index) => {
+            if (!result || !result.data) return;
+            
+            // 信頼度の計算（ここでは単純化）
+            let confidence = 0.8; // デフォルト信頼度
+            if (result.location) {
+                // 位置情報の精度に基づく信頼度調整
+                const { width, height } = result.location;
+                // サイズが非常に小さい場合は信頼度を下げる
+                if (width < 10 || height < 10) {
+                    confidence *= 0.5;
                 }
             }
+            
+            console.log(`候補 #${index+1}: "${result.data}" (信頼度: ${confidence.toFixed(2)})`);
+            
+            // 信頼度が閾値を超えているか確認
+            const confidenceThreshold = 0.3; // 信頼度閾値を下げる
+            if (confidence >= confidenceThreshold) {
+                if (!uniqueData.has(result.data) || 
+                    confidence > uniqueData.get(result.data).confidence) {
+                    // 新しいデータまたはより高い信頼度の結果を保存
+                    uniqueData.set(result.data, {
+                        ...result,
+                        confidence
+                    });
+                    console.log(`追加決定: "${result.data}" - 信頼度十分 (${confidence.toFixed(2)} >= ${confidenceThreshold})`);
+                }
+            } else {
+                console.log(`除外: "${result.data}" - 信頼度不足 (${confidence.toFixed(2)} < ${confidenceThreshold})`);
+            }
         });
-
-        return Array.from(mergedResults.values());
+        
+        // 信頼度でソート（高い順）
+        return Array.from(uniqueData.values()).sort((a, b) => b.confidence - a.confidence);
     },
 
     // 検出結果の信頼度を計算
@@ -919,6 +849,7 @@ const MultiQRScanner = {
     
     // 検出結果のUIを更新
     updateResultsUI() {
+        console.log('結果UI更新を開始');
         if (!this.resultsList) {
             this.resultsList = document.getElementById('detected-codes-list');
             if (!this.resultsList) {
@@ -927,6 +858,7 @@ const MultiQRScanner = {
             }
         }
         
+        console.log(`検出されたQRコード: ${this.detectedCodes.length}件`);
         // リストをクリア
         this.resultsList.innerHTML = '';
         
@@ -936,11 +868,13 @@ const MultiQRScanner = {
             emptyMessage.className = 'empty-message';
             emptyMessage.textContent = 'QRコードが検出されていません';
             this.resultsList.appendChild(emptyMessage);
+            console.log('検出結果なし - 空メッセージを表示');
             return;
         }
         
         // 検出されたQRコードをリスト表示
         this.detectedCodes.forEach((code, index) => {
+            console.log(`表示: QRコード${index + 1} - ${code.data}`);
             const listItem = document.createElement('div');
             listItem.className = 'detected-code-item';
             
@@ -972,6 +906,7 @@ const MultiQRScanner = {
             listItem.appendChild(deleteButton);
             this.resultsList.appendChild(listItem);
         });
+        console.log('結果UI更新完了');
     },
     
     // フレーム履歴を更新
