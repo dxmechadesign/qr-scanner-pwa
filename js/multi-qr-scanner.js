@@ -933,5 +933,60 @@ const MultiQRScanner = {
         } catch (error) {
             console.warn('カメラ設定の調整に失敗:', error);
         }
+    },
+
+    // 画像処理設定の読み込み
+    loadImageProcessingSettings() {
+        try {
+            const savedSettings = localStorage.getItem('imageProcessingSettings');
+            if (savedSettings) {
+                const settings = JSON.parse(savedSettings);
+                this.imageProcessing = {
+                    ...this.imageProcessing,
+                    ...settings
+                };
+                console.log('画像処理設定を読み込みました:', this.imageProcessing);
+            }
+        } catch (error) {
+            console.warn('画像処理設定の読み込みに失敗:', error);
+        }
+    },
+
+    // 複数スキャンビューの表示
+    showMultiScanView() {
+        try {
+            const container = document.getElementById('multi-qr-container');
+            if (!container) {
+                console.error('multi-qr-containerが見つかりません');
+                return;
+            }
+
+            // ビデオ要素の確認
+            this.videoElement = document.getElementById('multi-qr-video');
+            if (!this.videoElement) {
+                console.error('multi-qr-video要素が見つかりません');
+                return;
+            }
+
+            // キャンバス要素の確認
+            this.canvasElement = document.createElement('canvas');
+            this.canvasContext = this.canvasElement.getContext('2d', { willReadFrequently: true });
+
+            // 結果リストの確認
+            this.resultsList = document.getElementById('detected-codes-list');
+            if (!this.resultsList) {
+                console.error('detected-codes-list要素が見つかりません');
+            }
+
+            // ステータス要素の確認
+            this.statusElement = document.getElementById('detection-status');
+            if (!this.statusElement) {
+                console.error('detection-status要素が見つかりません');
+            }
+
+            console.log('複数スキャンビューを表示しました');
+        } catch (error) {
+            console.error('複数スキャンビューの表示に失敗:', error);
+        }
     }
 }
