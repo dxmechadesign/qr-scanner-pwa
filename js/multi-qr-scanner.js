@@ -954,39 +954,52 @@ const MultiQRScanner = {
 
     // 複数スキャンビューの表示
     showMultiScanView() {
-        try {
-            const container = document.getElementById('multi-qr-container');
-            if (!container) {
-                console.error('multi-qr-containerが見つかりません');
-                return;
-            }
-
-            // ビデオ要素の確認
-            this.videoElement = document.getElementById('multi-qr-video');
-            if (!this.videoElement) {
-                console.error('multi-qr-video要素が見つかりません');
-                return;
-            }
-
-            // キャンバス要素の確認
-            this.canvasElement = document.createElement('canvas');
-            this.canvasContext = this.canvasElement.getContext('2d', { willReadFrequently: true });
-
-            // 結果リストの確認
-            this.resultsList = document.getElementById('detected-codes-list');
-            if (!this.resultsList) {
-                console.error('detected-codes-list要素が見つかりません');
-            }
-
-            // ステータス要素の確認
-            this.statusElement = document.getElementById('detection-status');
-            if (!this.statusElement) {
-                console.error('detection-status要素が見つかりません');
-            }
-
-            console.log('複数スキャンビューを表示しました');
-        } catch (error) {
-            console.error('複数スキャンビューの表示に失敗:', error);
+        console.log('複数スキャンビューを表示します');
+        
+        // コンテナ要素の確認
+        const container = document.getElementById('multi-qr-container');
+        if (!container) {
+            console.error('multi-qr-container要素が見つかりません');
+            return;
         }
+        
+        // コンテナを表示
+        container.style.display = 'block';
+        console.log('multi-qr-containerの表示スタイル:', container.style.display);
+        
+        // ビデオ要素の確認
+        this.videoElement = document.getElementById('multi-qr-video');
+        if (!this.videoElement) {
+            console.error('multi-qr-video要素が見つかりません');
+            return;
+        }
+        
+        // キャンバス要素の確認
+        this.canvasElement = document.createElement('canvas');
+        this.canvasContext = this.canvasElement.getContext('2d', { willReadFrequently: true });
+        
+        // 結果リストの確認
+        this.resultsList = document.getElementById('detected-codes-list');
+        if (!this.resultsList) {
+            console.error('detected-codes-list要素が見つかりません');
+        }
+        
+        // ステータス要素の確認
+        this.statusElement = document.getElementById('detection-status');
+        if (!this.statusElement) {
+            console.error('detection-status要素が見つかりません');
+        }
+        
+        // カメラの起動
+        this.startCamera()
+            .then(() => {
+                console.log('カメラの起動に成功しました');
+                this.isScanning = true;
+                this.scanInterval = setInterval(() => this.scanVideoFrame(), 150);
+            })
+            .catch(error => {
+                console.error('カメラの起動に失敗しました:', error);
+                this.updateStatus('カメラの起動に失敗しました', 'error');
+            });
     }
 }

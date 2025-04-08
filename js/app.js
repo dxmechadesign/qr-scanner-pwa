@@ -502,16 +502,21 @@ const App = {
             console.log(`${view}-container要素:`, targetView);
             
             if (view === 'multiScan') {
-                console.log('複数スキャンビューを表示しました');
+                console.log('複数スキャンビューを表示します');
                 if (typeof MultiQRScanner !== 'undefined') {
                     console.log('MultiQRScannerが定義されています');
                     if (typeof MultiQRScanner.showMultiScanView === 'function') {
+                        console.log('showMultiScanViewメソッドを呼び出します');
                         MultiQRScanner.showMultiScanView();
                     } else {
                         console.error('showMultiScanViewメソッドが定義されていません');
                     }
+                } else {
+                    console.error('MultiQRScannerが定義されていません');
                 }
             }
+        } else {
+            console.error(`${view}-container要素が見つかりません`);
         }
     },
 
