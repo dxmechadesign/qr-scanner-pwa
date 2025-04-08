@@ -244,13 +244,19 @@
     </script>
 
     <!-- スクリプト -->
-    <!-- ZXingライブラリを読み込む (最新バージョン) -->
-    <script src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+    <!-- 基本ライブラリ -->
     <script src="js/jsQR.js"></script>
+    
+    <!-- ZXingライブラリを読み込む (固定バージョン) -->
+    <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+    
+    <!-- アプリケーションスクリプト -->
     <script src="js/qr-scanner.js"></script>
-    <script src="js/app.js"></script>
     <script src="js/multi-qr-scanner.js"></script>
-    <script src="https://docs.opencv.org/4.5.5/opencv.js"></script>
+    <script src="js/app.js"></script>
+    
+    <!-- OpenCV (最後に読み込み) -->
+    <script async src="https://docs.opencv.org/4.5.5/opencv.js" onload="onOpenCVReady()"></script>
     
     <script>
         // カメラリフレッシュボタンのイベント

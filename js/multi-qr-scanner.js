@@ -74,84 +74,62 @@ const MultiQRScanner = {
             
             // ZXingの利用可能性をチェック
             if (typeof window.ZXing === 'undefined') {
-                console.error('ZXingライブラリが利用できません');
-                reject(new Error('ZXingライブラリが利用できません'));
-                return;
+                console.log('ZXingライブラリが利用できません。jsQRを使用します');
+                this.reader = null;
+            } else {
+                try {
+                    console.log('ZXingリーダーを初期化中...');
+                    
+                    // ZXingライブラリのバージョン確認
+                    const ZXing = window.ZXing;
+                    console.log('ZXingライブラリのバージョン:', ZXing);
+                    
+                    // ヒントの初期化
+                    const hints = new Map();
+                    
+                    // リーダーの初期化（バージョンによって異なる）
+                    if (ZXing.BrowserMultiFormatReader) {
+                        console.log('BrowserMultiFormatReaderを使用');
+                        
+                        // 新しいバージョン用の初期化
+                        try {
+                            this.reader = new ZXing.BrowserMultiFormatReader();
+                            console.log('新しいZXing APIで初期化しました');
+                        } catch (initError) {
+                            console.warn('新しいZXing API初期化エラー:', initError);
+                            
+                            // 古いバージョン用の初期化を試行
+                            try {
+                                if (ZXing.DecodeHintType && ZXing.BarcodeFormat) {
+                                    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
+                                    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+                                    this.reader = new ZXing.BrowserMultiFormatReader(hints);
+                                    console.log('古いZXing APIで初期化しました');
+                                }
+                            } catch (oldApiError) {
+                                console.warn('古いZXing API初期化エラー:', oldApiError);
+                                this.reader = null;
+                            }
+                        }
+                    } else {
+                        console.log('ZXingの互換APIが見つかりません。jsQRを使用します');
+                        this.reader = null;
+                    }
+                    
+                    if (this.reader) {
+                        console.log('ZXingリーダー初期化成功:', this.reader);
+                    }
+                } catch (error) {
+                    console.error('ZXingリーダーの初期化エラー:', error);
+                    this.reader = null;
+                }
             }
             
-            try {
-                console.log('ZXingリーダーを初期化中...');
-                
-                // ZXingライブラリのバージョン確認
-                const ZXing = window.ZXing;
-                console.log('ZXingライブラリのバージョン:', ZXing);
-                
-                // APIの形式を確認
-                if (!ZXing) {
-                    throw new Error('ZXingライブラリが利用できません');
-                }
-                
-                // リーダーの初期化（バージョンによって異なる）
-                if (ZXing.BrowserMultiFormatReader) {
-                    console.log('BrowserMultiFormatReaderを使用');
-                    const hints = {};
-                    
-                    // 最新バージョンのヒント設定方法
-                    if (ZXing.DecodeHintType) {
-                        // 古いバージョン
-                        const hintsMap = new Map();
-                        if (ZXing.BarcodeFormat) {
-                            hintsMap.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
-                        }
-                        if (ZXing.DecodeHintType.TRY_HARDER) {
-                            hintsMap.set(ZXing.DecodeHintType.TRY_HARDER, true);
-                        }
-                        // 高速化のためのヒント追加
-                        if (ZXing.DecodeHintType.CHARACTER_SET) {
-                            hintsMap.set(ZXing.DecodeHintType.CHARACTER_SET, "UTF-8");
-                        }
-                        this.reader = new ZXing.BrowserMultiFormatReader(hintsMap);
-                    } else {
-                        // 新しいバージョン
-                        hints.formats = ['QR_CODE'];
-                        hints.tryHarder = true;
-                        hints.characterSet = "UTF-8";
-                        this.reader = new ZXing.BrowserMultiFormatReader(hints);
-                    }
-                } else if (ZXing.MultiFormatReader) {
-                    console.log('MultiFormatReaderを使用');
-                    this.reader = new ZXing.MultiFormatReader();
-                    
-                    // ヒント設定
-                    const hints = new Map();
-                    if (ZXing.DecodeHintType && ZXing.BarcodeFormat) {
-                        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
-                        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-                        this.reader.setHints(hints);
-                    }
-                } else if (ZXing.Html5Qrcode) {
-                    // Html5Qrcode APIの場合
-                    console.log('Html5Qrcodeを使用');
-                    this.reader = new ZXing.Html5Qrcode('multi-qr-video-container');
-                } else {
-                    throw new Error('互換性のあるQRコードリーダーが見つかりません');
-                }
-                
-                console.log('作成されたリーダー:', this.reader);
-                console.log('利用可能なメソッド:', Object.getOwnPropertyNames(this.reader.__proto__));
-                
-                // イベントリスナーの設定
-                this.setupEventListeners();
-                
-                console.log('MultiQRScanner: 初期化完了');
-                resolve();
-            } catch (error) {
-                console.error('ZXingリーダーの初期化エラー:', error);
-                if (typeof App !== 'undefined' && App.showToast) {
-                    App.showToast('QRコード検出機能の初期化に失敗しました');
-                }
-                reject(error);
-            }
+            // イベントリスナーの設定
+            this.setupEventListeners();
+            
+            console.log('MultiQRScanner: 初期化完了');
+            resolve();
         });
     },
 
@@ -305,62 +283,12 @@ const MultiQRScanner = {
                 window.activeMediaStreams = [];
             }
             
-            // 最適化されたカメラ設定
-            const optimizedConstraints = {
-                video: {
-                    facingMode: 'environment', // 背面カメラを使用
-                    width: { ideal: 1280 },    // 幅の理想値
-                    height: { ideal: 720 },    // 高さの理想値
-                    aspectRatio: { ideal: 4/3 }, // アスペクト比
-                    frameRate: { ideal: 15, min: 10 } // フレームレート
+            // シンプルな制約でまず試行
+            const simpleConstraints = {
+                video: { 
+                    facingMode: 'environment'
                 }
             };
-            
-            // 高度なカメラ設定をサポートしているか確認
-            let advancedConstraintsSupported = false;
-            try {
-                // テスト用の簡易制約で確認
-                const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
-                advancedConstraintsSupported = supportedConstraints.focusMode && 
-                                            supportedConstraints.exposureMode;
-                console.log('サポートされている制約:', supportedConstraints);
-            } catch (e) {
-                console.log('高度なカメラ制約はサポートされていません');
-            }
-            
-            // 高度な設定がサポートされている場合のみ追加
-            if (advancedConstraintsSupported) {
-                optimizedConstraints.video.advanced = [
-                    { focusMode: 'continuous' },      // 連続的な自動フォーカス
-                    { exposureMode: 'continuous' },   // 自動露出
-                    { whiteBalanceMode: 'continuous' } // 自動ホワイトバランス
-                ];
-            }
-            
-            // 解像度レベルリスト (最適解から徐々に低下)
-            const resolutionLevels = [
-                optimizedConstraints, // 最適な設定を最初に試行
-                // レベル2: 中解像度
-                { 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 800 },
-                        height: { ideal: 600 }
-                    } 
-                },
-                // レベル3: 低解像度
-                { 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    } 
-                },
-                // レベル4: 最低限の設定
-                { 
-                    video: true
-                }
-            ];
             
             // グローバルにすべてのメディアストリームを停止
             if (typeof window.releaseAllCameras === 'function') {
@@ -369,16 +297,14 @@ const MultiQRScanner = {
             } else {
                 // 従来の方法でカメラを停止
                 this.stopCamera();
-                console.log('このコンポーネントのカメラを停止しました');
                 
-                // 他のビデオ要素のストリームも停止（安全策）
+                // 他のビデオ要素のストリームも停止
                 document.querySelectorAll('video').forEach(video => {
-                    if (video !== this.videoElement && video.srcObject) {
+                    if (video.srcObject) {
                         const stream = video.srcObject;
-                        if (stream.getTracks) {
+                        if (stream && stream.getTracks) {
                             stream.getTracks().forEach(track => {
                                 track.stop();
-                                console.log('他のビデオ要素のトラックを停止:', track.kind);
                             });
                         }
                         video.srcObject = null;
@@ -387,57 +313,11 @@ const MultiQRScanner = {
                 
                 // しばらく待機
                 await new Promise(resolve => setTimeout(resolve, 1000));
-                console.log('カメラリソース解放のため1秒待機しました');
             }
             
-            // この時点でカメラリソースは解放されているはず
-            
-            // 重要: enumerateDevices を呼び出してカメラをリフレッシュ
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const videoDevices = devices.filter(device => device.kind === 'videoinput');
-            console.log('利用可能なカメラ:', videoDevices.length);
-            
-            if (videoDevices.length === 0) {
-                throw new Error('カメラデバイスが見つかりません');
-            }
-            
-            // 各解像度レベルを順番に試行
-            let stream = null;
-            let lastError = null;
-            
-            for (let i = 0; i < resolutionLevels.length; i++) {
-                const constraints = resolutionLevels[i];
-                console.log(`カメラ解像度レベル${i+1}を試行:`, constraints);
-                
-                try {
-                    // getUserMediaの呼び出し前に再度確認
-                    if (i > 0) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        console.log(`レベル${i+1}試行前に500ms待機`);
-                    }
-                    
-                    stream = await navigator.mediaDevices.getUserMedia(constraints);
-                    console.log(`カメラ解像度レベル${i+1}で成功しました`);
-                    
-                    // カメラが起動したらストリームの状態を確認
-                    console.log('カメラストリーム情報:', stream.getVideoTracks()[0].getSettings());
-                    
-                    break; // 成功したらループを抜ける
-                } catch (error) {
-                    lastError = error;
-                    console.warn(`カメラ解像度レベル${i+1}で失敗:`, error.name);
-                    
-                    // ブラウザによっては特定のエラーが発生後すぐに再試行すると同じエラーが続くことがあるため待機
-                    if (i < resolutionLevels.length - 1) {
-                        console.log('次の解像度レベルを試行します...');
-                    }
-                }
-            }
-            
-            // すべての解像度レベルで失敗した場合
-            if (!stream) {
-                throw lastError || new Error('すべての解像度設定でカメラの起動に失敗しました');
-            }
+            // シンプルな設定でカメラを取得
+            console.log('シンプルな設定でカメラを試行します');
+            const stream = await navigator.mediaDevices.getUserMedia(simpleConstraints);
             
             // グローバル変数に追加して管理
             if (!window.activeMediaStreams) {
@@ -449,54 +329,56 @@ const MultiQRScanner = {
             this.videoStream = stream;
             
             // ビデオ要素に設定する前にもう一度クリア
-            this.videoElement.srcObject = null;
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            this.videoElement.srcObject = stream;
-            console.log('ビデオ要素にストリームをセット');
-            
-            // ビデオ再生開始
-            return new Promise((resolve, reject) => {
-                const timeoutId = setTimeout(() => {
-                    console.warn('ビデオのロードがタイムアウトしました');
-                    // タイムアウトした場合でも続行を試みる
-                    this.canvasElement.width = 640;
-                    this.canvasElement.height = 480;
-                    this.updateStatus('カメラ接続に時間がかかっています', 'warning');
-                    resolve();
-                }, 5000);
+            if (this.videoElement) {
+                this.videoElement.srcObject = null;
+                await new Promise(resolve => setTimeout(resolve, 100));
                 
-                this.videoElement.onloadedmetadata = () => {
-                    clearTimeout(timeoutId);
-                    console.log('ビデオメタデータ読み込み完了');
+                this.videoElement.srcObject = stream;
+                console.log('ビデオ要素にストリームをセット');
+                
+                // ビデオ再生開始
+                return new Promise((resolve, reject) => {
+                    const timeoutId = setTimeout(() => {
+                        console.warn('ビデオのロードがタイムアウトしました');
+                        // タイムアウトした場合でも続行を試みる
+                        this.canvasElement.width = 640;
+                        this.canvasElement.height = 480;
+                        this.updateStatus('準備完了、スキャンを開始します', 'scanning');
+                        resolve();
+                    }, 3000);
                     
-                    this.videoElement.play()
-                        .then(() => {
-                            console.log('ビデオ再生開始成功');
-                            // キャンバスサイズの設定
-                            this.canvasElement.width = this.videoElement.videoWidth;
-                            this.canvasElement.height = this.videoElement.videoHeight;
-                            console.log(`ビデオサイズ: ${this.canvasElement.width}x${this.canvasElement.height}`);
-                            this.updateStatus('スキャン中...', 'scanning');
-                            resolve();
-                        })
-                        .catch(error => {
-                            console.error("ビデオ再生エラー:", error);
-                            this.updateStatus('ビデオ再生エラー', 'error');
-                            // エラーが発生しても続行を試みる
-                            this.canvasElement.width = 640;
-                            this.canvasElement.height = 480;
-                            resolve();
-                        });
-                };
-                
-                this.videoElement.onerror = (event) => {
-                    clearTimeout(timeoutId);
-                    console.error("ビデオ要素でエラーが発生:", event);
-                    this.updateStatus('ビデオ読み込みエラー', 'error');
-                    reject(new Error('ビデオの読み込みに失敗しました'));
-                };
-            });
+                    this.videoElement.onloadedmetadata = () => {
+                        clearTimeout(timeoutId);
+                        console.log('ビデオメタデータ読み込み完了');
+                        
+                        this.videoElement.play()
+                            .then(() => {
+                                console.log('ビデオ再生開始成功');
+                                // キャンバスサイズの設定
+                                this.canvasElement.width = this.videoElement.videoWidth;
+                                this.canvasElement.height = this.videoElement.videoHeight;
+                                console.log(`ビデオサイズ: ${this.canvasElement.width}x${this.canvasElement.height}`);
+                                this.updateStatus('スキャン中...', 'scanning');
+                                resolve();
+                            })
+                            .catch(error => {
+                                console.error("ビデオ再生エラー:", error);
+                                this.canvasElement.width = 640;
+                                this.canvasElement.height = 480;
+                                this.updateStatus('スキャン準備完了', 'scanning');
+                                resolve();
+                            });
+                    };
+                    
+                    this.videoElement.onerror = (event) => {
+                        clearTimeout(timeoutId);
+                        console.error("ビデオ要素でエラーが発生:", event);
+                        reject(new Error('ビデオの読み込みに失敗しました'));
+                    };
+                });
+            } else {
+                throw new Error('ビデオ要素が見つかりません');
+            }
         } catch (error) {
             console.error("カメラ起動エラー:", error);
             
@@ -507,17 +389,60 @@ const MultiQRScanner = {
                 this.updateStatus('カメラが見つかりません', 'error');
             } else if (error.name === 'NotReadableError') {
                 this.updateStatus('カメラが他のアプリで使用中', 'error');
-                
-                // 特にNotReadableErrorの場合、ブラウザを再読み込みするようアドバイス
                 this.showReloadAdvice();
-            } else if (error.name === 'OverconstrainedError') {
-                this.updateStatus('要求した解像度はサポートされていません', 'error');
             } else {
-                this.updateStatus('カメラアクセスエラー: ' + error.name, 'error');
+                this.updateStatus('カメラをチェック中...', 'processing');
+                // 1秒後に改めて試行
+                setTimeout(() => {
+                    this.retryCamera();
+                }, 1000);
             }
             
             throw error;
         }
+    },
+
+    // カメラ接続リトライ
+    retryCamera() {
+        console.log('カメラ接続をリトライします');
+        this.updateStatus('カメラに再接続しています...', 'processing');
+        
+        // 最小限の設定でリトライ
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                console.log('リトライでカメラ接続成功');
+                
+                // 既存のストリームをクリア
+                this.stopCamera();
+                
+                // 新しいストリームをセット
+                this.videoStream = stream;
+                this.videoElement.srcObject = stream;
+                
+                // グローバル変数に追加
+                if (!window.activeMediaStreams) {
+                    window.activeMediaStreams = [];
+                }
+                window.activeMediaStreams.push(stream);
+                
+                // ビデオ再生
+                this.videoElement.play()
+                    .then(() => {
+                        console.log('リトライでビデオ再生成功');
+                        this.canvasElement.width = this.videoElement.videoWidth || 640;
+                        this.canvasElement.height = this.videoElement.videoHeight || 480;
+                        this.updateStatus('スキャン中...', 'scanning');
+                    })
+                    .catch(playError => {
+                        console.error('リトライでのビデオ再生エラー:', playError);
+                        this.updateStatus('カメラは接続されましたがビデオの表示に問題があります', 'warning');
+                    });
+            })
+            .catch(retryError => {
+                console.error('カメラリトライエラー:', retryError);
+                this.updateStatus('カメラに接続できません。ブラウザの設定を確認してください', 'error');
+                this.showReloadAdvice();
+            });
     },
 
     // 再読み込みを促すメッセージ表示
@@ -588,7 +513,7 @@ const MultiQRScanner = {
        
     // ビデオフレームをスキャン
     async scanVideoFrame() {
-        if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
+        if (!this.isScanning || !this.videoElement || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
             return;
         }
 
@@ -596,8 +521,8 @@ const MultiQRScanner = {
             // 現在時刻を取得
             const now = Date.now();
             
-            // 前回の検出から300ms以内なら処理をスキップ
-            if (now - this.lastDetection < 300) {
+            // 前回の検出から200ms以内なら処理をスキップ（より高速に）
+            if (now - this.lastDetection < 200) {
                 return;
             }
 
@@ -609,7 +534,7 @@ const MultiQRScanner = {
                 this.canvasElement.height
             );
             
-            // 画像処理の開始
+            // 画像処理の開始時間を記録
             const startTime = performance.now();
             
             // 画像データを取得
@@ -637,50 +562,13 @@ const MultiQRScanner = {
                 this.initializeScanAreas();
             }
 
+            // まずはjsQRでの検出を試みる
             for (const area of this.scanAreas) {
                 const areaImageData = this.canvasContext.getImageData(
                     area.x, area.y, area.width, area.height
                 );
 
-                // ZXingライブラリでの検出を試みる（高速）
-                if (this.reader && typeof this.reader.decodeFromImage === 'function') {
-                    try {
-                        // データURLに変換
-                        const dataURL = this.canvasElement.toDataURL('image/jpeg', 0.8);
-                        
-                        // 画像要素を作成
-                        const img = document.createElement('img');
-                        img.src = dataURL;
-                        
-                        // 画像の読み込みを待つ
-                        await new Promise((resolve) => {
-                            img.onload = resolve;
-                        });
-                        
-                        // ZXingで検出
-                        const result = await this.reader.decodeFromImage(img);
-                        if (result) {
-                            const codeData = result.text || (typeof result.getText === 'function' ? result.getText() : String(result));
-                            console.log('ZXingで検出:', codeData);
-                            
-                            allResults.push({
-                                data: codeData,
-                                location: {
-                                    top: area.y,
-                                    left: area.x,
-                                    width: area.width,
-                                    height: area.height
-                                }
-                            });
-                            detected = true;
-                        }
-                    } catch (zxingError) {
-                        console.warn('ZXingデコードエラー:', zxingError);
-                    }
-                }
-                
-                // jsQRでの検出（フォールバック）
-                if (!detected && typeof jsQR === 'function') {
+                if (typeof jsQR === 'function') {
                     try {
                         const code = jsQR(
                             areaImageData.data,
@@ -702,10 +590,79 @@ const MultiQRScanner = {
                                     height: code.location.bottomRight.y - code.location.topLeft.y
                                 }
                             });
+                            detected = true;
+                            // 1つ見つかったらすぐに処理
+                            break;
                         }
                     } catch (jsQRError) {
-                        console.warn('jsQRデコードエラー:', jsQRError);
+                        // エラーは抑制
                     }
+                }
+            }
+
+            // jsQRで検出されなかった場合のみZXingを試す
+            if (!detected && this.reader) {
+                try {
+                    // ZXingが利用可能なメソッドを確認
+                    if (typeof this.reader.decodeFromImage === 'function') {
+                        // データURLに変換（より低い品質で速度を優先）
+                        const dataURL = this.canvasElement.toDataURL('image/jpeg', 0.5);
+                        
+                        // 画像要素を作成
+                        const img = new Image();
+                        img.src = dataURL;
+                        
+                        // 画像の読み込みを待つ（短いタイムアウト）
+                        await Promise.race([
+                            new Promise(resolve => { img.onload = resolve; }),
+                            new Promise(resolve => setTimeout(resolve, 500))
+                        ]);
+                        
+                        if (img.complete) {
+                            // ZXingで検出
+                            const result = await this.reader.decodeFromImage(img);
+                            if (result) {
+                                const codeData = result.text || (typeof result.getText === 'function' ? result.getText() : String(result));
+                                console.log('ZXingで検出:', codeData);
+                                
+                                allResults.push({
+                                    data: codeData,
+                                    location: {
+                                        top: 0,
+                                        left: 0,
+                                        width: this.canvasElement.width,
+                                        height: this.canvasElement.height
+                                    }
+                                });
+                                detected = true;
+                            }
+                        }
+                    } else if (typeof this.reader.decode === 'function') {
+                        // 古いAPIの場合
+                        try {
+                            const bitmap = this.createBitmapFromImageData(imageData);
+                            const result = this.reader.decode(bitmap);
+                            if (result) {
+                                const codeData = result.text || (typeof result.getText === 'function' ? result.getText() : String(result));
+                                console.log('ZXing(decode)で検出:', codeData);
+                                
+                                allResults.push({
+                                    data: codeData,
+                                    location: {
+                                        top: 0,
+                                        left: 0,
+                                        width: this.canvasElement.width,
+                                        height: this.canvasElement.height
+                                    }
+                                });
+                                detected = true;
+                            }
+                        } catch (decodeError) {
+                            // 無視
+                        }
+                    }
+                } catch (zxingError) {
+                    // エラーは抑制（jsQRで十分な場合が多い）
                 }
             }
 
@@ -736,6 +693,38 @@ const MultiQRScanner = {
         }
     },
 
+    // ImageDataからBitmapを作成（ZXingの古いバージョン用）
+    createBitmapFromImageData(imageData) {
+        if (typeof window.ZXing === 'undefined' || !window.ZXing.BitMatrix) {
+            return null;
+        }
+        
+        try {
+            const ZXing = window.ZXing;
+            const width = imageData.width;
+            const height = imageData.height;
+            const bitMatrix = new ZXing.BitMatrix(width, height);
+            
+            // グレースケール化して閾値処理
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    // グレースケール値を計算（RGB平均）
+                    const gray = (imageData.data[idx] + imageData.data[idx + 1] + imageData.data[idx + 2]) / 3;
+                    // 閾値処理（128より小さい場合は黒、それ以外は白）
+                    if (gray < 128) {
+                        bitMatrix.set(x, y);
+                    }
+                }
+            }
+            
+            return bitMatrix;
+        } catch (error) {
+            console.error('BitMatrix作成エラー:', error);
+            return null;
+        }
+    },
+
     // 画像処理メソッド
     processImage: function(imageData) {
         const processedData = new ImageData(
@@ -745,8 +734,8 @@ const MultiQRScanner = {
         );
 
         // コントラストと明るさの調整
-        const contrast = 1.2;
-        const brightness = 0.1;
+        const contrast = 1.5;  // より高いコントラストで検出しやすく
+        const brightness = 0.15; // 明るさを増加
 
         for (let i = 0; i < processedData.data.length; i += 4) {
             processedData.data[i] = Math.min(255, Math.max(0, (processedData.data[i] - 128) * contrast + 128 + brightness * 255));
@@ -754,8 +743,10 @@ const MultiQRScanner = {
             processedData.data[i + 2] = Math.min(255, Math.max(0, (processedData.data[i + 2] - 128) * contrast + 128 + brightness * 255));
         }
 
-        // エッジ強調
-        this.enhanceEdges(processedData);
+        // エッジ強調処理は軽量に
+        if (this.imageProcessing.edgeEnhancement) {
+            this.enhanceEdges(processedData);
+        }
 
         return processedData;
     },
@@ -795,9 +786,27 @@ const MultiQRScanner = {
 
         const width = this.canvasElement.width;
         const height = this.canvasElement.height;
-        const gridSize = 3; // 3x3のグリッド
-
-        this.scanAreas = [];
+        
+        // 中心領域を優先的にスキャン
+        this.scanAreas = [
+            // 中央の大きな領域
+            {
+                x: width * 0.25,
+                y: height * 0.25,
+                width: width * 0.5,
+                height: height * 0.5
+            },
+            // 画面全体
+            {
+                x: 0,
+                y: 0,
+                width: width,
+                height: height
+            }
+        ];
+        
+        // 3x3のグリッドを追加
+        const gridSize = 3;
         for (let y = 0; y < gridSize; y++) {
             for (let x = 0; x < gridSize; x++) {
                 this.scanAreas.push({
@@ -1096,7 +1105,7 @@ const MultiQRScanner = {
             .then(() => {
                 console.log('カメラの起動に成功しました');
                 this.isScanning = true;
-                this.scanInterval = setInterval(() => this.scanVideoFrame(), 150);
+                this.scanInterval = setInterval(() => this.scanVideoFrame(), 80);
             })
             .catch(error => {
                 console.error('カメラの起動に失敗しました:', error);
