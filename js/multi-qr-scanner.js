@@ -555,6 +555,10 @@ const MultiQRScanner = {
                 if (!this.isDetectedCode(jsQRResult.data)) {
                     this.addDetectedCode(jsQRResult.data);
                     detected = true;
+                    // 検出音を再生
+                    this.playBeepSound();
+                    // 結果UIを更新
+                    this.updateResultsUI();
                 } else {
                     console.log("重複コード検出（jsQR）", jsQRResult.data);
                     // 重複でも最後の検出時間は更新
@@ -572,6 +576,10 @@ const MultiQRScanner = {
                         console.log("ZXingでQRコードを検出:", result[0].text);
                         if (!this.isDetectedCode(result[0].text)) {
                             this.addDetectedCode(result[0].text);
+                            // 検出音を再生
+                            this.playBeepSound();
+                            // 結果UIを更新
+                            this.updateResultsUI();
                         } else {
                             console.log("重複コード検出（ZXing）", result[0].text);
                             // 重複でも最後の検出時間は更新
@@ -1035,6 +1043,10 @@ const MultiQRScanner = {
             console.error('detection-status要素が見つかりません');
         }
         
+        // 検出済みQRコードの配列を初期化
+        this.detectedCodes = [];
+        this.updateResultsUI();
+        
         // カメラの起動
         this.startCamera()
             .then(() => {
@@ -1046,5 +1058,33 @@ const MultiQRScanner = {
                 console.error('カメラの起動に失敗しました:', error);
                 this.updateStatus('カメラの起動に失敗しました', 'error');
             });
+    },
+
+    // 検出済みQRコードかどうかをチェック（新規追加）
+    isDetectedCode(data) {
+        if (!data) return false;
+        return this.detectedCodes.some(code => code.data === data);
+    },
+    
+    // 検出されたQRコードを追加（新規追加）
+    addDetectedCode(data) {
+        if (!data) return;
+        
+        // 現在の時刻を取得
+        const timestamp = Date.now();
+        
+        // 検出結果を追加
+        this.detectedCodes.push({
+            data: data,
+            timestamp: timestamp
+        });
+        
+        // 最後の検出時刻を更新
+        this.lastDetection = timestamp;
+        
+        console.log(`新しいQRコードを追加: ${data}`);
+        
+        // 検出ステータスを更新
+        this.updateStatus(`QRコードを検出: ${this.detectedCodes.length}個`, 'success');
     }
 }
