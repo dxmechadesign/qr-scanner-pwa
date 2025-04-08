@@ -591,7 +591,7 @@ const MultiQRScanner = {
         if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
             return;
         }
-        
+
         try {
             // 現在時刻を取得
             const now = Date.now();
@@ -600,7 +600,7 @@ const MultiQRScanner = {
             if (now - this.lastDetection < 300) {
                 return;
             }
-            
+
             // ビデオフレームをキャンバスに描画
             this.canvasContext.drawImage(
                 this.videoElement, 
@@ -618,1303 +618,320 @@ const MultiQRScanner = {
                 this.canvasElement.width, 
                 this.canvasElement.height
             );
-            
+
             // 画像処理を適用
-            this.processImage(imageData);
+            const processedImageData = this.processImage(imageData);
             
             // 処理後の画像をキャンバスに戻す
-            this.canvasContext.putImageData(imageData, 0, 0);
+            this.canvasContext.putImageData(processedImageData, 0, 0);
             
             // 処理時間を計測
             const processingTime = performance.now() - startTime;
             console.log(`画像処理時間: ${processingTime.toFixed(2)}ms`);
-            
+
             let detected = false;
-            
-            // ZXingライブラリでの検出を試みる（高速）
-            if (this.reader && typeof this.reader.decodeFromImage === 'function') {
-                try {
-                    // データURLに変換
-                    const dataURL = this.canvasElement.toDataURL('image/jpeg', 0.8);
-                    
-                    // 画像要素を作成
-                    const img = document.createElement('img');
-                    img.src = dataURL;
-                    
-                    // 画像の読み込みを待つ
-                    await new Promise((resolve) => {
-                        img.onload = resolve;
-                    });
-                    
-                    // ZXingで検出
-                    const result = await this.reader.decodeFromImage(img);
-                    if (result) {
-                        const codeData = result.text || (typeof result.getText === 'function' ? result.getText() : String(result));
-                        console.log('ZXingで検出:', codeData);
+            const allResults = [];
+
+            // スキャン領域ごとに処理
+            if (!this.scanAreas) {
+                this.initializeScanAreas();
+            }
+
+            for (const area of this.scanAreas) {
+                const areaImageData = this.canvasContext.getImageData(
+                    area.x, area.y, area.width, area.height
+                );
+
+                // ZXingライブラリでの検出を試みる（高速）
+                if (this.reader && typeof this.reader.decodeFromImage === 'function') {
+                    try {
+                        // データURLに変換
+                        const dataURL = this.canvasElement.toDataURL('image/jpeg', 0.8);
                         
-                        // 重複チェック
-                        const isDuplicate = this.detectedCodes.some(item => item.data === codeData);
+                        // 画像要素を作成
+                        const img = document.createElement('img');
+                        img.src = dataURL;
                         
-                        if (!isDuplicate) {
-                            this.detectedCodes.push({
-                                id: Date.now() + Math.random().toString(36).substring(2, 9),
-                                data: codeData,
-                                format: 'QR_CODE',
-                                timestamp: new Date().toISOString()
-                            });
+                        // 画像の読み込みを待つ
+                        await new Promise((resolve) => {
+                            img.onload = resolve;
+                        });
+                        
+                        // ZXingで検出
+                        const result = await this.reader.decodeFromImage(img);
+                        if (result) {
+                            const codeData = result.text || (typeof result.getText === 'function' ? result.getText() : String(result));
+                            console.log('ZXingで検出:', codeData);
                             
-                            this.lastDetection = now;
-                            this.playBeepSound();
-                            this.updateResultsUI();
-                            this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                        } else {
-                            // 重複した場合も検出時刻を更新（連続検出の抑制のため）
-                            this.lastDetection = now;
+                            allResults.push({
+                                data: codeData,
+                                location: {
+                                    top: area.y,
+                                    left: area.x,
+                                    width: area.width,
+                                    height: area.height
+                                }
+                            });
+                            detected = true;
                         }
-                        detected = true;
+                    } catch (zxingError) {
+                        console.warn('ZXingデコードエラー:', zxingError);
                     }
-                } catch (zxingError) {
-                    // ZXingでエラーが発生した場合はjsQRにフォールバック
-                    // console.warn('ZXingデコードエラー:', zxingError);
+                }
+                
+                // jsQRでの検出（フォールバック）
+                if (!detected && typeof jsQR === 'function') {
+                    try {
+                        const code = jsQR(
+                            areaImageData.data,
+                            areaImageData.width,
+                            areaImageData.height,
+                            {
+                                inversionAttempts: "dontInvert"
+                            }
+                        );
+                        
+                        if (code) {
+                            console.log('jsQRで検出:', code.data);
+                            allResults.push({
+                                data: code.data,
+                                location: {
+                                    top: area.y + code.location.topLeft.y,
+                                    left: area.x + code.location.topLeft.x,
+                                    width: code.location.bottomRight.x - code.location.topLeft.x,
+                                    height: code.location.bottomRight.y - code.location.topLeft.y
+                                }
+                            });
+                        }
+                    } catch (jsQRError) {
+                        console.warn('jsQRデコードエラー:', jsQRError);
+                    }
                 }
             }
-            
-            // ZXingで検出できなかった場合はjsQRを使用
-            if (!detected && typeof jsQR === 'function') {
-                try {
-                    // キャンバスからイメージデータを取得
-                    const imageData = this.canvasContext.getImageData(
-                        0, 0, 
-                        this.canvasElement.width, 
-                        this.canvasElement.height
-                    );
-                    
-                    const code = jsQR(
-                        imageData.data,
-                        imageData.width,
-                        imageData.height,
-                        {
-                            inversionAttempts: "dontInvert",  // 白黒反転の試行を減らして速度向上
-                        }
-                    );
-                    
-                    if (code) {
-                        console.log('jsQRで検出:', code.data);
+
+            // 検出結果の統合と信頼度評価
+            if (allResults.length > 0) {
+                const mergedResults = this.mergeResults(allResults);
+                
+                // 新しいコードの検出
+                mergedResults.forEach(result => {
+                    const isDuplicate = this.detectedCodes.some(item => item.data === result.data);
+                    if (!isDuplicate) {
+                        this.detectedCodes.push({
+                            id: Date.now() + Math.random().toString(36).substring(2, 9),
+                            data: result.data,
+                            format: 'QR_CODE',
+                            timestamp: new Date().toISOString()
+                        });
                         
-                        // 重複チェック
-                        const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
-                        
-                        if (!isDuplicate) {
-                            this.detectedCodes.push({
-                                id: Date.now() + Math.random().toString(36).substring(2, 9),
-                                data: code.data,
-                                format: 'QR_CODE',
-                                timestamp: new Date().toISOString()
-                            });
-                            
-                            this.lastDetection = now;
-                            this.playBeepSound();
-                            this.updateResultsUI();
-                            this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                        } else {
-                            // 重複した場合も検出時刻を更新（連続検出の抑制のため）
-                            this.lastDetection = now;
-                        }
+                        this.lastDetection = now;
+                        this.playBeepSound();
+                        this.updateResultsUI();
+                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
                     }
-                } catch (jsQRError) {
-                    console.warn('jsQRデコードエラー:', jsQRError);
-                }
+                });
             }
         } catch (error) {
             console.error('スキャン処理エラー:', error);
         }
     },
 
-    // ハイブリッドスキャン処理（新規追加）
-    async hybridScan() {
-        if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
-            return;
+    // 画像処理メソッド
+    processImage: function(imageData) {
+        const processedData = new ImageData(
+            new Uint8ClampedArray(imageData.data),
+            imageData.width,
+            imageData.height
+        );
+
+        // コントラストと明るさの調整
+        const contrast = 1.2;
+        const brightness = 0.1;
+
+        for (let i = 0; i < processedData.data.length; i += 4) {
+            processedData.data[i] = Math.min(255, Math.max(0, (processedData.data[i] - 128) * contrast + 128 + brightness * 255));
+            processedData.data[i + 1] = Math.min(255, Math.max(0, (processedData.data[i + 1] - 128) * contrast + 128 + brightness * 255));
+            processedData.data[i + 2] = Math.min(255, Math.max(0, (processedData.data[i + 2] - 128) * contrast + 128 + brightness * 255));
         }
-        
-        try {
-            // パフォーマンス計測開始
-            const startTime = performance.now();
-            
-            // ビデオからフレームをキャプチャ
-            this.canvasContext.drawImage(
-                this.videoElement, 
-                0, 0, 
-                this.canvasElement.width, 
-                this.canvasElement.height
-            );
-            
-            // モード確認
-            if (this.processingMode !== 'legacy' && this.isOpenCVReady && typeof cv !== 'undefined') {
-                // OpenCVを使用した処理
-                const qrRegions = this.processWithOpenCV();
-                
-                if (qrRegions && qrRegions.length > 0) {
-                    console.log(`${qrRegions.length}個のQRコード候補領域を検出`);
-                    
-                    // 各候補領域からQRコードを読み取り
-                    let detectedCount = 0;
-                    
-                    for (const region of qrRegions) {
-                        // 領域の画像データを取得
-                        const regionData = this.canvasContext.getImageData(
-                            region.x, region.y, region.width, region.height
-                        );
-                        
-                        // jsQRでQRコードを検出
-                        const code = jsQR(
-                            regionData.data,
-                            regionData.width,
-                            regionData.height,
-                            { inversionAttempts: "dontInvert" }
-                        );
-                        
-                        if (code) {
-                            // 重複チェック
-                            const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
-                            
-                            if (!isDuplicate) {
-                                detectedCount++;
-                                
-                                this.detectedCodes.push({
-                                    id: Date.now() + Math.random().toString(36).substring(2, 9),
-                                    data: code.data,
-                                    format: 'QR_CODE',
-                                    timestamp: new Date().toISOString(),
-                                    region: `x=${region.x},y=${region.y}`
-                                });
-                                
-                                this.lastDetection = Date.now();
-                                this.playBeepSound();
-                            }
-                        }
-                    }
-                    
-                    if (detectedCount > 0) {
-                        this.updateResultsUI();
-                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                    }
-                }
-            } else {
-                // OpenCVが利用できない場合はフォールバック処理
-                this.fallbackScan();
-            }
-            
-            // スキャン間隔を調整
-            const processingTime = performance.now() - startTime;
-            console.log(`ハイブリッド処理時間: ${processingTime.toFixed(2)}ms`);
-            
-            // 次のスキャンをスケジュール
-            if (this.isScanning) {
-                setTimeout(() => {
-                    this.hybridScan();
-                }, Math.max(300, processingTime * 1.5));
-            }
-        } catch (error) {
-            console.error('ハイブリッドスキャンエラー:', error);
-            
-            // エラー発生時もフォールバック処理を試行
-            this.fallbackScan();
-            
-            // 次のスキャンをスケジュール
-            if (this.isScanning) {
-                setTimeout(() => {
-                    this.hybridScan();
-                }, 1000);
-            }
-        }
+
+        // エッジ強調
+        this.enhanceEdges(processedData);
+
+        return processedData;
     },
 
-    // OpenCVを使用した画像処理（新規追加）
-    processWithOpenCV() {
-        try {
-            // キャンバスからイメージデータを取得
-            const imageData = this.canvasContext.getImageData(
-                0, 0, this.canvasElement.width, this.canvasElement.height
-            );
-            
-            // ImageDataからMat（OpenCVの画像形式）に変換
-            const src = cv.matFromImageData(imageData);
-            const dst = new cv.Mat();
-            
-            // グレースケール変換
-            cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY);
-            
-            // 適応的閾値処理（コントラスト強調）
-            const binary = new cv.Mat();
-            cv.adaptiveThreshold(dst, binary, 255, 
-                            cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                            cv.THRESH_BINARY, 25, 10);
-            
-            // モルフォロジー演算でノイズ除去
-            const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
-            const processedImg = new cv.Mat();
-            cv.morphologyEx(binary, processedImg, cv.MORPH_CLOSE, kernel);
-            
-            // 処理済み画像をデバッグ表示（オプション）
-            if (this.imageProcessing.debug) {
-                // キャンバスに処理済み画像を表示
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = processedImg.cols;
-                tempCanvas.height = processedImg.rows;
-                cv.imshow(tempCanvas, processedImg);
-                
-                // デバッグ用HTMLに追加
-                const debugContainer = document.getElementById('debug-container');
-                if (debugContainer) {
-                    debugContainer.innerHTML = '';
-                    debugContainer.appendChild(tempCanvas);
-                }
-            }
-            
-            // 輪郭検出
-            const contours = new cv.MatVector();
-            const hierarchy = new cv.Mat();
-            cv.findContours(processedImg, contours, hierarchy, 
-                            cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-            
-            // QRコード候補領域を抽出
-            const qrRegions = [];
-            for (let i = 0; i < contours.size(); ++i) {
-                const contour = contours.get(i);
-                const area = cv.contourArea(contour);
-                
-                // 小さすぎる領域は無視
-                if (area < 1000) continue;
-                
-                // 輪郭の周囲長を計算
-                const perimeter = cv.arcLength(contour, true);
-                const approx = new cv.Mat();
-                cv.approxPolyDP(contour, approx, 0.05 * perimeter, true);
-                
-                // QRコードの特徴を持つ領域を抽出
-                // (頂点数が4~10の領域、またはほぼ四角形の領域)
-                if (approx.rows >= 4 && approx.rows <= 10) {
-                    // 境界矩形を取得
-                    const rect = cv.boundingRect(contour);
-                    
-                    // アスペクト比をチェック (0.5 ~ 2.0 の範囲)
-                    const aspectRatio = rect.width / rect.height;
-                    if (aspectRatio >= 0.5 && aspectRatio <= 2.0) {
-                        // 領域を少し拡張 (マージン追加)
-                        const margin = Math.min(rect.width, rect.height) * 0.1;
-                        
-                        qrRegions.push({
-                            x: Math.max(0, Math.floor(rect.x - margin)),
-                            y: Math.max(0, Math.floor(rect.y - margin)),
-                            width: Math.min(Math.floor(rect.width + margin * 2), src.cols - rect.x),
-                            height: Math.min(Math.floor(rect.height + margin * 2), src.rows - rect.y)
-                        });
-                    }
-                }
-                approx.delete();
-            }
-            
-            // リソースを解放（重要）
-            src.delete();
-            dst.delete();
-            binary.delete();
-            kernel.delete();
-            processedImg.delete();
-            contours.delete();
-            hierarchy.delete();
-            
-            return qrRegions;
-        } catch (err) {
-            console.error('OpenCV処理エラー:', err);
-            return null;
-        }
-    },
-
-    // フォールバックスキャン処理（新規追加）
-    fallbackScan() {
-        try {
-            // 通常の分割領域スキャン
-            const imageData = this.canvasContext.getImageData(
-                0, 0, this.canvasElement.width, this.canvasElement.height
-            );
-            
-            // 画像処理を適用
-            this.processImage(imageData);
-            
-            // 処理後のデータを戻す
-            this.canvasContext.putImageData(imageData, 0, 0);
-            
-            // 画像を縦方向に3分割してスキャン
-            const divisionHeight = Math.floor(this.canvasElement.height / 3);
-            
-            for (let i = 0; i < 3; i++) {
-                const y = i * divisionHeight;
-                const height = divisionHeight;
-                
-                // 各領域のイメージデータを取得
-                const regionData = this.canvasContext.getImageData(
-                    0, y, this.canvasElement.width, height
-                );
-                
-                // jsQRでQRコードを検出
-                const code = jsQR(
-                    regionData.data,
-                    regionData.width,
-                    regionData.height,
-                    { inversionAttempts: "dontInvert" }
-                );
-                
-                if (code) {
-                    // 重複チェック
-                    const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
-                    
-                    if (!isDuplicate) {
-                        this.detectedCodes.push({
-                            id: Date.now() + Math.random().toString(36).substring(2, 9),
-                            data: code.data,
-                            format: 'QR_CODE',
-                            timestamp: new Date().toISOString(),
-                            region: `section=${i+1}`
-                        });
-                        
-                        this.lastDetection = Date.now();
-                        this.playBeepSound();
-                        this.updateResultsUI();
-                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('フォールバックスキャンエラー:', error);
-        }
-    },
-    
-    // UI表示を更新
-    updateResultsUI() {
-        if (!this.resultsList) return;
-        
-        this.resultsList.innerHTML = '';
-        
-        if (this.detectedCodes.length === 0) {
-            this.resultsList.innerHTML = '<p class="empty-message">QRコードが検出されていません</p>';
-            return;
-        }
-        
-        this.detectedCodes.forEach((code, index) => {
-            const item = document.createElement('div');
-            item.className = 'qr-result-item';
-            
-            // 時刻フォーマット
-            const date = new Date(code.timestamp);
-            const formattedTime = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
-            
-            item.innerHTML = `
-                <div class="qr-result-header">
-                    <span class="qr-result-number">#${index + 1}</span>
-                    <button class="qr-result-remove" data-id="${code.id}">✕</button>
-                </div>
-                <div class="qr-result-data">${code.data}</div>
-                <div class="qr-result-meta">
-                    <span class="qr-result-time">${formattedTime}</span>
-                </div>
-            `;
-            
-            this.resultsList.appendChild(item);
-        });
-        
-        // 削除ボタンのイベント設定
-        const removeButtons = this.resultsList.querySelectorAll('.qr-result-remove');
-        removeButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                const id = e.target.getAttribute('data-id');
-                this.detectedCodes = this.detectedCodes.filter(code => code.id !== id);
-                this.updateResultsUI();
-                this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 
-                    this.detectedCodes.length > 0 ? 'success' : 'stopped');
-            });
-        });
-    },
-    
-    // 状態表示の更新
-    updateStatus(message, statusClass) {
-        if (this.statusElement) {
-            this.statusElement.textContent = message;
-            this.statusElement.className = 'detection-status';
-            if (statusClass) {
-                this.statusElement.classList.add(statusClass);
-            }
-        }
-    },
-    
-    // ボタン状態の更新
-    updateButtonState(isScanning) {
-        const startBtn = document.getElementById('start-multi-scan');
-        const stopBtn = document.getElementById('stop-multi-scan');
-        
-        if (startBtn) startBtn.disabled = isScanning;
-        if (stopBtn) stopBtn.disabled = !isScanning;
-    },
-    
-    // 検出結果の保存
-    saveDetectedCodes() {
-        if (this.detectedCodes.length === 0) {
-            if (typeof App !== 'undefined' && App.showToast) {
-                App.showToast('保存するQRコードがありません');
-            }
-            return;
-        }
-        
-        // App.jsのsaveScannedData関数を利用して保存
-        if (typeof App !== 'undefined') {
-            this.detectedCodes.forEach(code => {
-                App.saveScannedData(code.data);
-            });
-            
-            App.showToast(`${this.detectedCodes.length}個のQRコードを保存しました`);
-            App.displayHistory(); // 履歴表示を更新
-        }
-        
-        // 検出リストをクリア
-        this.detectedCodes = [];
-        this.updateResultsUI();
-        this.updateStatus('スキャン中...', 'scanning');
-    },
-    
-    // ビープ音の再生
-    playBeepSound() {
-        try {
-            // Web Audio APIを使用
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.type = 'square';
-            oscillator.frequency.value = 800;
-            gainNode.gain.value = 0.3;
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.start(0);
-            
-            // 短いビープ音
-            setTimeout(() => {
-                oscillator.stop();
-            }, 150);
-            
-        } catch (error) {
-            console.error("ビープ音の再生に失敗:", error);
-        }
-    },
-    
-    // ビュー表示
-    showMultiScanView() {
-        console.log('showMultiScanViewが呼び出されました');
-        
-        // 要素の存在を確認
-        const multiContainer = document.getElementById('multi-qr-container');
-        console.log('multi-qr-container要素:', multiContainer);
-        
-        if (multiContainer) {
-            console.log('multi-qr-container表示前のスタイル:', multiContainer.style.display);
-            // キャプチャUIをアクティブに
-            multiContainer.style.display = 'block';
-            console.log('multi-qr-container表示後のスタイル:', multiContainer.style.display);
-            
-            // イベントリスナーを再設定
-            this.setupEventListeners();
-            
-            // 他のビューを非表示
-            const otherViews = document.querySelectorAll('.view-container:not(#multi-qr-container)');
-            console.log('他のビュー数:', otherViews.length);
-            otherViews.forEach(view => {
-                view.style.display = 'none';
-            });
-        } else {
-            console.error('multi-qr-container要素が見つかりません');
-        }
-    },
-
-    // グレースケール変換
-    toGrayscale(imageData) {
-        const data = imageData.data;
-        
-        for (let i = 0; i < data.length; i += 4) {
-            // 輝度の重み付け平均（人間の視覚に適した変換）
-            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-            data[i] = data[i + 1] = data[i + 2] = gray;
-        }
-        return imageData;
-    },
-    
-    // コントラスト調整
-    adjustContrast(imageData, factor) {
-        const data = imageData.data;
-        const factor255 = 255 * (factor - 1);
-        
-        for (let i = 0; i < data.length; i += 4) {
-            for (let j = 0; j < 3; j++) {
-                const val = data[i + j];
-                data[i + j] = Math.min(255, Math.max(0, factor * (val - 128) + 128));
-            }
-        }
-        return imageData;
-    },
-    
-    // シャープニング処理
-    sharpen(imageData) {
+    // エッジ強調メソッド
+    enhanceEdges: function(imageData) {
+        const tempData = new Uint8ClampedArray(imageData.data);
         const width = imageData.width;
         const height = imageData.height;
-        const data = imageData.data;
-        const tempData = new Uint8ClampedArray(data);
-        
-        // エッジ強調用カーネル
-        const kernel = [
-            0, -1, 0,
-            -1, 5, -1,
-            0, -1, 0
-        ];
-        
-        // 画像の端を除いて処理
+
         for (let y = 1; y < height - 1; y++) {
             for (let x = 1; x < width - 1; x++) {
-                for (let c = 0; c < 3; c++) {
-                    let sum = 0;
-                    
-                    for (let ky = -1; ky <= 1; ky++) {
-                        for (let kx = -1; kx <= 1; kx++) {
-                            const idx = ((y + ky) * width + (x + kx)) * 4 + c;
-                            sum += tempData[idx] * kernel[(ky + 1) * 3 + kx + 1];
-                        }
-                    }
-                    
-                    const idx = (y * width + x) * 4 + c;
-                    data[idx] = Math.min(255, Math.max(0, sum));
-                }
-            }
-        }
-        
-        return imageData;
-    },
-    
-    // 適応的二値化処理（局所的な閾値を使用）
-    adaptiveThreshold(imageData, regionSize = 15, constant = 5) {
-        const width = imageData.width;
-        const height = imageData.height;
-        const data = imageData.data;
-        const grayscaleCopy = new Uint8Array(width * height);
-        
-        // グレースケール配列を作成
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const idx = (y * width + x) * 4;
-                grayscaleCopy[y * width + x] = data[idx];
-            }
-        }
-        
-        // 各ピクセルに対して局所的な閾値を計算して二値化
-        const halfRegion = Math.floor(regionSize / 2);
-        
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                let sum = 0;
-                let count = 0;
-                
-                // 周辺領域の平均を計算（最適化のため、サンプリング間隔を設定）
-                const step = Math.max(1, Math.floor(regionSize / 5));
-                
-                for (let dy = -halfRegion; dy <= halfRegion; dy += step) {
-                    for (let dx = -halfRegion; dx <= halfRegion; dx += step) {
-                        const nx = x + dx;
-                        const ny = y + dy;
-                        
-                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                            sum += grayscaleCopy[ny * width + nx];
-                            count++;
-                        }
-                    }
-                }
-                
-                // 局所平均を閾値に使用
-                const threshold = Math.floor(sum / count) - constant;
-                const idx = (y * width + x) * 4;
-                const value = grayscaleCopy[y * width + x] < threshold ? 0 : 255;
-                
-                data[idx] = data[idx + 1] = data[idx + 2] = value;
-            }
-        }
-        
-        return imageData;
-    },
-    
-    // すべての画像処理を適用するメイン関数
-    processImage(imageData) {
-        if (!this.imageProcessing.enabled) return imageData;
-        
-        // グレースケール変換は常に適用
-        this.toGrayscale(imageData);
-        
-        // コントラスト調整
-        if (this.imageProcessing.contrastFactor !== 1.0) {
-            this.adjustContrast(imageData, this.imageProcessing.contrastFactor);
-        }
-        
-        // シャープニング
-        if (this.imageProcessing.sharpeningEnabled) {
-            this.sharpen(imageData);
-        }
-        
-        // 適応的二値化
-        if (this.imageProcessing.thresholdEnabled) {
-            this.adaptiveThreshold(
-                imageData, 
-                this.imageProcessing.regionSize, 
-                this.imageProcessing.thresholdConstant
-            );
-        }
-        
-        return imageData;
-    },
-
-    // 設定の保存
-    saveProcessingSettings() {
-        if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('qr-image-processing', JSON.stringify(this.imageProcessing));
-        }
-    },
-    
-    // 設定のロード
-    loadProcessingSettings() {
-        if (typeof localStorage !== 'undefined') {
-            const settings = localStorage.getItem('qr-image-processing');
-            if (settings) {
-                try {
-                    this.imageProcessing = {...this.imageProcessing, ...JSON.parse(settings)};
-                } catch (error) {
-                    console.error('画像処理設定の読み込みエラー:', error);
-                }
-            }
-        }
-    },
-    
-    // 設定イベントの設定
-    setupProcessingSettings() {
-        // 設定UIの要素を取得
-        const enableProcessing = document.getElementById('enable-processing');
-        const contrastFactor = document.getElementById('contrast-factor');
-        const contrastValue = document.getElementById('contrast-value');
-        const enableSharpen = document.getElementById('enable-sharpen');
-        const enableThreshold = document.getElementById('enable-threshold');
-        const resetButton = document.getElementById('reset-processing');
-        
-        if (!enableProcessing) return; // 設定UIがない場合は終了
-        
-        // 現在の設定を反映
-        enableProcessing.checked = this.imageProcessing.enabled;
-        contrastFactor.value = this.imageProcessing.contrastFactor;
-        contrastValue.textContent = this.imageProcessing.contrastFactor;
-        enableSharpen.checked = this.imageProcessing.sharpeningEnabled;
-        enableThreshold.checked = this.imageProcessing.thresholdEnabled;
-        
-        // イベントリスナーの設定
-        enableProcessing.addEventListener('change', (e) => {
-            this.imageProcessing.enabled = e.target.checked;
-            this.saveProcessingSettings();
-        });
-        
-        contrastFactor.addEventListener('input', (e) => {
-            this.imageProcessing.contrastFactor = parseFloat(e.target.value);
-            contrastValue.textContent = e.target.value;
-            this.saveProcessingSettings();
-        });
-        
-        enableSharpen.addEventListener('change', (e) => {
-            this.imageProcessing.sharpeningEnabled = e.target.checked;
-            this.saveProcessingSettings();
-        });
-        
-        enableThreshold.addEventListener('change', (e) => {
-            this.imageProcessing.thresholdEnabled = e.target.checked;
-            this.saveProcessingSettings();
-        });
-        
-        resetButton.addEventListener('click', () => {
-            // デフォルト設定に戻す
-            this.imageProcessing = {
-                enabled: true,
-                contrastFactor: 1.4,
-                sharpeningEnabled: true,
-                thresholdEnabled: true,
-                regionSize: 15,
-                thresholdConstant: 5,
-                debug: false
-            };
-            
-            // UI更新
-            enableProcessing.checked = true;
-            contrastFactor.value = 1.4;
-            contrastValue.textContent = "1.4";
-            enableSharpen.checked = true;
-            enableThreshold.checked = true;
-            
-            this.saveProcessingSettings();
-        });
-    },
-
-    // グレースケール変換
-    toGrayscale(imageData) {
-        const data = imageData.data;
-        
-        for (let i = 0; i < data.length; i += 4) {
-            // 輝度の重み付け平均
-            const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-            data[i] = data[i + 1] = data[i + 2] = gray;
-        }
-        return imageData;
-    },
-    
-    // コントラスト調整
-    adjustContrast(imageData, factor) {
-        const data = imageData.data;
-        
-        for (let i = 0; i < data.length; i += 4) {
-            for (let j = 0; j < 3; j++) {
-                const val = data[i + j];
-                // コントラスト調整式
-                data[i + j] = Math.min(255, Math.max(0, factor * (val - 128) + 128));
-            }
-        }
-        return imageData;
-    },
-    
-    // シャープニング処理
-    sharpen(imageData) {
-        const width = imageData.width;
-        const height = imageData.height;
-        const data = imageData.data;
-        const tempData = new Uint8ClampedArray(data);
-        
-        // エッジ強調用カーネル
-        const kernel = [
-            0, -1, 0,
-            -1, 5, -1,
-            0, -1, 0
-        ];
-        
-        // 画像の端から1ピクセル内側のみ処理（エッジ処理を簡略化）
-        for (let y = 1; y < height - 1; y++) {
-            for (let x = 1; x < width - 1; x++) {
-                const pixelIndex = (y * width + x) * 4;
-                
-                for (let c = 0; c < 3; c++) {
-                    let sum = 0;
-                    let kernelIndex = 0;
-                    
-                    for (let ky = -1; ky <= 1; ky++) {
-                        for (let kx = -1; kx <= 1; kx++) {
-                            const idx = ((y + ky) * width + (x + kx)) * 4 + c;
-                            sum += tempData[idx] * kernel[kernelIndex++];
-                        }
-                    }
-                    
-                    data[pixelIndex + c] = Math.min(255, Math.max(0, sum));
-                }
-            }
-        }
-        
-        return imageData;
-    },
-    
-    // 適応的二値化（シンプル版 - パフォーマンス重視）
-    adaptiveThreshold(imageData, regionSize = 15, constant = 5) {
-        const width = imageData.width;
-        const height = imageData.height;
-        const data = imageData.data;
-        
-        // 処理を高速化するため、サブサンプリングして平均を計算
-        const sampling = Math.max(1, Math.floor(regionSize / 3));
-        const halfRegion = Math.floor(regionSize / 2);
-        
-        // サブサンプリングした領域の平均を使用して処理
-        for (let y = 0; y < height; y += sampling) {
-            for (let x = 0; x < width; x += sampling) {
-                // 局所領域の平均を計算
-                let sum = 0;
-                let count = 0;
-                
-                // 周辺領域をサンプリング
-                for (let dy = -halfRegion; dy <= halfRegion; dy += sampling) {
-                    for (let dx = -halfRegion; dx <= halfRegion; dx += sampling) {
-                        const nx = x + dx;
-                        const ny = y + dy;
-                        
-                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                            sum += data[(ny * width + nx) * 4];
-                            count++;
-                        }
-                    }
-                }
-                
-                // 平均を計算し、閾値として使用
-                const threshold = Math.floor(sum / count) - constant;
-                
-                // この領域内のピクセルを二値化
-                for (let sy = 0; sy < sampling && y + sy < height; sy++) {
-                    for (let sx = 0; sx < sampling && x + sx < width; sx++) {
-                        const currentY = y + sy;
-                        const currentX = x + sx;
-                        const idx = (currentY * width + currentX) * 4;
-                        
-                        // 閾値処理
-                        const value = data[idx] < threshold ? 0 : 255;
-                        data[idx] = data[idx + 1] = data[idx + 2] = value;
-                    }
-                }
-            }
-        }
-        
-        return imageData;
-    },
-    
-    // すべての画像処理を適用するメイン関数
-    processImage(imageData) {
-        if (!this.imageProcessing.enabled) return imageData;
-        
-        // オリジナルのデータをデバッグ用にコピー
-        let originalImageData = null;
-        if (this.imageProcessing.debug) {
-            originalImageData = new ImageData(
-                new Uint8ClampedArray(imageData.data), 
-                imageData.width, 
-                imageData.height
-            );
-        }
-        
-        // グレースケール変換
-        if (this.imageProcessing.useGrayscale) {
-            this.toGrayscale(imageData);
-        }
-        
-        // コントラスト調整（係数が1.0より大きい場合のみ）
-        if (this.imageProcessing.contrastFactor > 1.0) {
-            this.adjustContrast(imageData, this.imageProcessing.contrastFactor);
-        }
-        
-        // シャープニング
-        if (this.imageProcessing.sharpeningEnabled) {
-            this.sharpen(imageData);
-        }
-        
-        // 適応的二値化
-        if (this.imageProcessing.thresholdEnabled) {
-            this.adaptiveThreshold(
-                imageData, 
-                this.imageProcessing.regionSize, 
-                this.imageProcessing.thresholdConstant
-            );
-        }
-        
-        // デバッグ表示
-        if (this.imageProcessing.debug && originalImageData) {
-            this.showDebugImages(originalImageData, imageData);
-        }
-        
-        return imageData;
-    },
-    
-    // デバッグ表示用（オプション）
-    showDebugImages(originalImageData, processedImageData) {
-        // デバッグ用キャンバスの作成
-        let debugContainer = document.getElementById('qr-debug-container');
-        if (!debugContainer) {
-            debugContainer = document.createElement('div');
-            debugContainer.id = 'qr-debug-container';
-            debugContainer.style.position = 'fixed';
-            debugContainer.style.bottom = '10px';
-            debugContainer.style.right = '10px';
-            debugContainer.style.zIndex = '9999';
-            debugContainer.style.display = 'flex';
-            debugContainer.style.background = 'rgba(0,0,0,0.7)';
-            debugContainer.style.padding = '5px';
-            debugContainer.style.borderRadius = '5px';
-            document.body.appendChild(debugContainer);
-            
-            const originalCanvas = document.createElement('canvas');
-            originalCanvas.width = 160;
-            originalCanvas.height = 120;
-            originalCanvas.style.marginRight = '5px';
-            
-            const processedCanvas = document.createElement('canvas');
-            processedCanvas.width = 160;
-            processedCanvas.height = 120;
-            
-            debugContainer.appendChild(originalCanvas);
-            debugContainer.appendChild(processedCanvas);
-            
-            this.debugCanvases = {
-                original: originalCanvas.getContext('2d'),
-                processed: processedCanvas.getContext('2d')
-            };
-        }
-        
-        // 縮小表示
-        const origCtx = this.debugCanvases.original;
-        const procCtx = this.debugCanvases.processed;
-        
-        // 元画像を描画
-        origCtx.canvas.width = 160;
-        origCtx.canvas.height = 120;
-        origCtx.putImageData(originalImageData, 0, 0, 0, 0, 
-            origCtx.canvas.width, origCtx.canvas.height);
-        
-        // 処理後画像を描画
-        procCtx.canvas.width = 160;
-        procCtx.canvas.height = 120;
-        procCtx.putImageData(processedImageData, 0, 0, 0, 0, 
-            procCtx.canvas.width, procCtx.canvas.height);
-    },
-
-    // 画像処理設定の保存
-    saveImageProcessingSettings() {
-        if (typeof localStorage !== 'undefined') {
-            try {
-                localStorage.setItem('qr-image-processing', JSON.stringify(this.imageProcessing));
-                console.log('画像処理設定を保存しました');
-            } catch (error) {
-                console.error('設定の保存に失敗:', error);
-            }
-        }
-    },
-    
-    // 画像処理設定の読み込み
-    loadImageProcessingSettings() {
-        if (typeof localStorage !== 'undefined') {
-            try {
-                const saved = localStorage.getItem('qr-image-processing');
-                if (saved) {
-                    const parsedSettings = JSON.parse(saved);
-                    // 既存設定とマージ（新しい設定項目を保持）
-                    this.imageProcessing = {...this.imageProcessing, ...parsedSettings};
-                    console.log('画像処理設定を読み込みました:', this.imageProcessing);
-                }
-            } catch (error) {
-                console.error('設定の読み込みに失敗:', error);
-            }
-        }
-    },
-
-    // 複数領域スキャン処理の追加
-    async scanMultipleRegions() {
-        if (!this.isScanning || this.videoElement.readyState !== this.videoElement.HAVE_ENOUGH_DATA) {
-            return;
-        }
-        
-        try {
-            // 現在のフレームをキャンバスに描画
-            this.canvasContext.drawImage(
-                this.videoElement, 
-                0, 0, 
-                this.canvasElement.width, 
-                this.canvasElement.height
-            );
-            
-            // 画面を複数の領域に分割してスキャン
-            const regions = [
-                // 上部領域
-                {
-                    x: 0,
-                    y: 0,
-                    width: this.canvasElement.width,
-                    height: this.canvasElement.height / 3
-                },
-                // 中央上部領域
-                {
-                    x: 0,
-                    y: this.canvasElement.height / 4,
-                    width: this.canvasElement.width,
-                    height: this.canvasElement.height / 3
-                },
-                // 中央領域
-                {
-                    x: 0,
-                    y: this.canvasElement.height / 3,
-                    width: this.canvasElement.width,
-                    height: this.canvasElement.height / 3
-                },
-                // 中央下部領域
-                {
-                    x: 0,
-                    y: this.canvasElement.height / 2,
-                    width: this.canvasElement.width,
-                    height: this.canvasElement.height / 3
-                },
-                // 下部領域
-                {
-                    x: 0,
-                    y: 2 * this.canvasElement.height / 3,
-                    width: this.canvasElement.width,
-                    height: this.canvasElement.height / 3
-                }
-            ];
-            
-            // 各領域を個別に処理
-            for (const region of regions) {
-                // 領域ごとに画像データを取得
-                const imageData = this.canvasContext.getImageData(
-                    region.x, region.y, region.width, region.height
-                );
-                
-                // 画像処理を適用
-                this.processImage(imageData);
-                
-                // 処理後の画像を使用してQRコードを検出（jsQRを使用）
-                const code = jsQR(
-                    imageData.data,
-                    imageData.width,
-                    imageData.height,
-                    {
-                        inversionAttempts: "dontInvert"
-                    }
-                );
-                
-                if (code) {
-                    // 重複チェック
-                    const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
-                    
-                    if (!isDuplicate) {
-                        this.detectedCodes.push({
-                            id: Date.now() + Math.random().toString(36).substring(2, 9),
-                            data: code.data,
-                            format: 'QR_CODE',
-                            timestamp: new Date().toISOString()
-                        });
-                        
-                        this.lastDetection = Date.now();
-                        this.playBeepSound();
-                        this.updateResultsUI();
-                        this.updateStatus(`${this.detectedCodes.length}個のQRコードを検出`, 'success');
-                        
-                        // 検出位置を視覚的に表示（デバッグモード）
-                        if (this.imageProcessing.debug) {
-                            this.highlightDetection(region.x + code.location.topLeftCorner.x, 
-                                                region.y + code.location.topLeftCorner.y,
-                                                code.location.dimension);
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('複数領域スキャン処理エラー:', error);
-        }
-    },
-
-    // エッジ強調処理
-    enhanceEdges(imageData) {
-        const width = imageData.width;
-        const height = imageData.height;
-        const data = imageData.data;
-        const tempData = new Uint8ClampedArray(data);
-        
-        // Sobelフィルターによるエッジ検出
-        for (let y = 1; y < height - 1; y++) {
-            for (let x = 1; x < width - 1; x++) {
-                // 水平方向のエッジ検出フィルター
-                const hKernel = [
-                    -1, -2, -1,
-                    0,  0,  0,
-                    1,  2,  1
-                ];
-                
-                // 垂直方向のエッジ検出フィルター
-                const vKernel = [
-                    -1, 0, 1,
-                    -2, 0, 2,
-                    -1, 0, 1
-                ];
-                
-                let hSum = 0;
-                let vSum = 0;
-                
+                let r = 0, g = 0, b = 0;
                 for (let ky = -1; ky <= 1; ky++) {
                     for (let kx = -1; kx <= 1; kx++) {
                         const idx = ((y + ky) * width + (x + kx)) * 4;
-                        const kernelIdx = (ky + 1) * 3 + (kx + 1);
-                        
-                        hSum += tempData[idx] * hKernel[kernelIdx];
-                        vSum += tempData[idx] * vKernel[kernelIdx];
+                        const k = (ky === 0 && kx === 0) ? 9 : -1;
+                        r += tempData[idx] * k;
+                        g += tempData[idx + 1] * k;
+                        b += tempData[idx + 2] * k;
                     }
                 }
-                
-                // エッジの強さ
-                const edgeMagnitude = Math.sqrt(hSum * hSum + vSum * vSum);
-                const pixelIndex = (y * width + x) * 4;
-                
-                // 閾値を超えたらエッジとして強調
-                if (edgeMagnitude > 50) {
-                    data[pixelIndex] = data[pixelIndex + 1] = data[pixelIndex + 2] = 0; // 黒
-                } else {
-                    // 輝度が高い部分は白く
-                    if (tempData[pixelIndex] > 127) {
-                        data[pixelIndex] = data[pixelIndex + 1] = data[pixelIndex + 2] = 255; // 白
-                    }
-                }
+                const idx = (y * width + x) * 4;
+                imageData.data[idx] = Math.min(255, Math.max(0, r));
+                imageData.data[idx + 1] = Math.min(255, Math.max(0, g));
+                imageData.data[idx + 2] = Math.min(255, Math.max(0, b));
             }
         }
-        
-        return imageData;
     },
 
-    // 適応的なスキャンインターバルの設定
-    setAdaptiveScanInterval() {
-        // 初期スキャン間隔
-        let interval = 150; // ミリ秒
-        
-        // 最後の処理時間に基づいて調整
-        if (this.lastProcessingTime) {
-            if (this.lastProcessingTime > 100) {
-                // 処理に時間がかかっている場合、間隔を長くする
-                interval = Math.min(300, this.lastProcessingTime * 1.5);
-            } else if (this.lastProcessingTime < 30) {
-                // 処理が速い場合、間隔を短くする
-                interval = Math.max(50, this.lastProcessingTime * 2);
+    // スキャン領域の初期化
+    initializeScanAreas: function() {
+        if (!this.canvasElement) {
+            console.error('キャンバス要素が見つかりません');
+            return;
+        }
+
+        const width = this.canvasElement.width;
+        const height = this.canvasElement.height;
+        const gridSize = 3; // 3x3のグリッド
+
+        this.scanAreas = [];
+        for (let y = 0; y < gridSize; y++) {
+            for (let x = 0; x < gridSize; x++) {
+                this.scanAreas.push({
+                    x: x * (width / gridSize),
+                    y: y * (height / gridSize),
+                    width: width / gridSize,
+                    height: height / gridSize
+                });
             }
         }
-        
-        console.log(`スキャンインターバルを${interval}msに調整`);
-        
-        // 既存のインターバルをクリア
-        if (this.scanInterval) {
-            clearInterval(this.scanInterval);
-        }
-        
-        // 新しいインターバルを設定
-        this.scanInterval = setInterval(() => {
-            const startTime = performance.now();
-            
-            // 複数領域スキャンを実行
-            this.scanMultipleRegions();
-            
-            // 処理時間を記録
-            this.lastProcessingTime = performance.now() - startTime;
-        }, interval);
+
+        console.log('スキャン領域を初期化しました:', this.scanAreas);
     },
 
-    // 手動キャプチャと高品質処理（新規追加）
-manualCapture() {
-    if (!this.videoElement || this.videoElement.readyState < 2) {
-        this.showToast('カメラが準備できていません');
-        return;
-    }
-    
-    try {
-        this.updateStatus('高精度キャプチャ中...', 'processing');
-        
-        // ビデオをキャンバスに描画
-        this.canvasContext.drawImage(
-            this.videoElement, 
-            0, 0, 
-            this.canvasElement.width, 
-            this.canvasElement.height
-        );
-        
-        // OpenCVが利用可能な場合
-        if (this.isOpenCVReady && typeof cv !== 'undefined') {
-            const regions = this.processWithOpenCV();
-            if (regions && regions.length > 0) {
-                this.updateStatus(`${regions.length}個の候補領域を検出`, 'processing');
-                
-                // 各領域を処理
-                let detectedCodes = 0;
-                for (const region of regions) {
-                    // 領域の画像データを取得
-                    const regionData = this.canvasContext.getImageData(
-                        region.x, region.y, region.width, region.height
-                    );
-                    
-                    // 領域を強調表示（デバッグ用）
-                    if (this.imageProcessing.debug) {
-                        this.canvasContext.strokeStyle = 'rgba(0, 255, 0, 0.7)';
-                        this.canvasContext.lineWidth = 3;
-                        this.canvasContext.strokeRect(
-                            region.x, region.y, region.width, region.height
-                        );
-                    }
-                    
-                    // jsQRでQRコードを検出
-                    const code = jsQR(
-                        regionData.data,
-                        regionData.width,
-                        regionData.height,
-                        { inversionAttempts: "dontInvert" }
-                    );
-                    
-                    if (code) {
-                        detectedCodes++;
-                        
-                        // 重複チェック
-                        const isDuplicate = this.detectedCodes.some(item => item.data === code.data);
-                        
-                        if (!isDuplicate) {
-                            this.detectedCodes.push({
-                                id: Date.now() + Math.random().toString(36).substring(2, 9),
-                                data: code.data,
-                                format: 'QR_CODE',
-                                timestamp: new Date().toISOString(),
-                                region: `manual`
-                            });
-                            
-                            // 領域を緑色で強調表示
-                            this.canvasContext.strokeStyle = 'rgba(0, 255, 0, 1)';
-                            this.canvasContext.lineWidth = 5;
-                            this.canvasContext.strokeRect(
-                                region.x, region.y, region.width, region.height
-                            );
-                            
-                            this.playBeepSound();
-                        }
-                    }
-                }
-                
-                if (detectedCodes > 0) {
-                    this.updateResultsUI();
-                    this.updateStatus(`${detectedCodes}個のQRコードを検出`, 'success');
-                } else {
-                    this.updateStatus('QRコードが見つかりません', 'error');
-                }
-            } else {
-                this.updateStatus('QRコード候補が見つかりません', 'error');
-            }
-        } else {
-            // OpenCVが利用できない場合はフォールバック処理
-            this.updateStatus('フォールバックモードで処理中...', 'processing');
-            this.fallbackScan();
+    // 検出結果を統合
+    mergeResults: function(results) {
+        if (!results || results.length === 0) {
+            return [];
         }
-    } catch (error) {
-        console.error('手動キャプチャエラー:', error);
-        this.updateStatus('キャプチャ処理エラー', 'error');
-    }
-},
 
-// トースト通知表示（新規追加）
-showToast(message) {
-    // トースト通知を表示する処理
-    const toast = document.createElement('div');
-    toast.className = 'scanner-toast';
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    // アニメーションのためにクラスを追加
-    setTimeout(() => {
-        toast.classList.add('show');
-    }, 10);
-    
-    // 3秒後に削除
-    setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => {
-            toast.remove();
-        }, 300);
-    }, 3000);
+        const mergedResults = new Map();
+        const confidenceThreshold = 0.7;
+
+        results.forEach(result => {
+            if (!result || !result.data) {
+                return;
+            }
+
+            const confidence = this.calculateConfidence(result);
+            if (confidence >= confidenceThreshold) {
+                if (!mergedResults.has(result.data) || 
+                    mergedResults.get(result.data).confidence < confidence) {
+                    mergedResults.set(result.data, {
+                        data: result.data,
+                        confidence: confidence,
+                        location: result.location
+                    });
+                }
+            }
+        });
+
+        return Array.from(mergedResults.values());
+    },
+
+    // 検出結果の信頼度を計算
+    calculateConfidence: function(result) {
+        if (!result || !result.location) {
+            return 0;
+        }
+
+        let confidence = 0.5;
+        
+        if (this.frameHistory && this.frameHistory.length > 0) {
+            const lastResult = this.frameHistory[this.frameHistory.length - 1];
+            if (lastResult && lastResult.location) {
+                const positionDiff = Math.abs(result.location.top - lastResult.location.top) +
+                                   Math.abs(result.location.left - lastResult.location.left);
+                confidence -= positionDiff / 1000;
+            }
+        }
+
+        if (this.frameHistory) {
+            const consistentCount = this.frameHistory.filter(r => r && r.data === result.data).length;
+            confidence += consistentCount * 0.1;
+        }
+
+        return Math.min(1, Math.max(0, confidence));
+    },
+
+    // フレーム履歴を更新
+    updateHistory: function(result) {
+        if (!result || !result.data) {
+            return;
+        }
+
+        if (!this.frameHistory) {
+            this.frameHistory = [];
+        }
+
+        this.frameHistory.push(result);
+        if (this.frameHistory.length > 5) {
+            this.frameHistory.shift();
+        }
+    },
+
+    // カメラ設定の動的調整
+    adjustCameraSettings: async function() {
+        if (!this.videoElement || !this.videoElement.srcObject) {
+            console.error('ビデオ要素またはストリームが見つかりません');
+            return;
+        }
+
+        try {
+            const track = this.videoElement.srcObject.getVideoTracks()[0];
+            if (!track) {
+                console.error('ビデオトラックが見つかりません');
+                return;
+            }
+
+            const capabilities = track.getCapabilities();
+            const settings = track.getSettings();
+
+            // フォーカスモードの設定
+            if (capabilities.focusMode) {
+                await track.applyConstraints({
+                    advanced: [{ focusMode: 'continuous' }]
+                });
+            }
+
+            // 露出設定の調整
+            if (capabilities.exposureMode) {
+                await track.applyConstraints({
+                    advanced: [{ exposureMode: 'continuous' }]
+                });
+            }
+
+            // 解像度の動的調整
+            if (capabilities.width && capabilities.height) {
+                const targetWidth = Math.min(1920, capabilities.width.max);
+                const targetHeight = Math.min(1080, capabilities.height.max);
+                
+                await track.applyConstraints({
+                    width: targetWidth,
+                    height: targetHeight
+                });
+            }
+
+            console.log('カメラ設定を最適化しました:', {
+                width: settings.width,
+                height: settings.height,
+                frameRate: settings.frameRate
+            });
+        } catch (error) {
+            console.warn('カメラ設定の調整に失敗:', error);
+        }
+    }
 }
-    
-};
